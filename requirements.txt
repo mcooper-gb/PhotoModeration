@@ -1,0 +1,6 @@
+nudenet>=3.4.2
+opencv-python
+python-dotenv
+onnxruntime==1.19.2
+numpy==1.26.4
+watchdog
