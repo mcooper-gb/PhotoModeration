@@ -13,6 +13,7 @@ class Config:
     DB_PATH = os.getenv('DB_PATH', 'scanned_images.db')
     BATCH_SIZE = int(os.getenv('BATCH_SIZE', 10))
     CENSORED_DIR = os.getenv('CENSORED_DIR', 'censored_images')
+    CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', 0.6))
 
     @classmethod
     def validate(cls):

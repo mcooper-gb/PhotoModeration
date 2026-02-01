@@ -32,7 +32,13 @@ class EmailTemplate:
                 padding: 2px 6px;
                 border-radius: 3px;
                 margin-right: 5px;
+                margin-bottom: 5px;
                 display: inline-block;
+            }
+            .confidence-score {
+                font-size: 0.85em;
+                color: #666;
+                font-weight: normal;
             }
             .censored-image {
                 max-width: 800px;
@@ -109,22 +115,34 @@ class EmailTemplate:
 
     @staticmethod
     def _generate_detection_labels(detections):
-        """Generate HTML for detection labels."""
+        """Generate HTML for detection labels with confidence scores."""
+        # Collect detections with their scores
+        label_scores = {}
+
         if isinstance(detections, dict):
             # Handle video detections (dict of frame_num: detections)
-            all_labels = set()
             for frame_detections in detections.values():
                 if isinstance(frame_detections, list):
                     for det in frame_detections:
-                        all_labels.add(det.get('class', 'Unknown'))
-            labels_list = sorted(all_labels)
+                        label = det.get('class', 'Unknown')
+                        score = det.get('score', 0)
+                        # Keep the highest score for each label
+                        if label not in label_scores or score > label_scores[label]:
+                            label_scores[label] = score
         else:
             # Handle image detections (list)
-            labels_list = sorted(set(det.get('class', 'Unknown') for det in detections))
+            for det in detections:
+                label = det.get('class', 'Unknown')
+                score = det.get('score', 0)
+                # Keep the highest score for each label
+                if label not in label_scores or score > label_scores[label]:
+                    label_scores[label] = score
 
-        html = f'<p><span class="info-label">Detections:</span> '
-        for label in labels_list:
-            html += f'<span class="detection-label">{label}</span>'
+        html = f'<p><span class="info-label">Detections:</span><br>'
+        for label in sorted(label_scores.keys()):
+            score = label_scores[label]
+            score_percent = int(score * 100)
+            html += f'<span class="detection-label">{label} <span class="confidence-score">({score_percent}%)</span></span>'
         html += '</p>'
 
         return html

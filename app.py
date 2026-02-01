@@ -100,10 +100,11 @@ def main():
     print(f"Monitoring: {Config.SCAN_DIR}")
     print(f"Output: {Config.CENSORED_DIR}")
     print(f"Batch size: {Config.BATCH_SIZE}")
+    print(f"Confidence threshold: {Config.CONFIDENCE_THRESHOLD}")
 
     # Initialize components
     scanner = Scanner(Config.SCAN_DIR, Config.DB_PATH)
-    moderator = Moderator(Config.CENSORED_DIR)
+    moderator = Moderator(Config.CENSORED_DIR, Config.CONFIDENCE_THRESHOLD)
     notifier = Notifier(
         Config.SMTP_SERVER,
         Config.SMTP_PORT,

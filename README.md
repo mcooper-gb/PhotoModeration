@@ -25,6 +25,7 @@ SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-app-password
 BATCH_SIZE=10
+CONFIDENCE_THRESHOLD=0.6
 ```
 
 3. **Start the service:**
@@ -56,6 +57,7 @@ services:
       - SMTP_USER=${SMTP_USER:-your-smtp-user@gmail.com}
       - SMTP_PASS=${SMTP_PASS:-your-smtp-password}
       - BATCH_SIZE=${BATCH_SIZE:-10}
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.6}
       - SCAN_DIR=/data/scan
       - CENSORED_DIR=/data/censored
       - DB_PATH=/data/db/scanned.db
@@ -92,6 +94,9 @@ All settings can be configured via environment variables in the `.env` file:
 - `SMTP_USER` - SMTP username
 - `SMTP_PASS` - SMTP password (use app-specific password for Gmail)
 - `BATCH_SIZE` - Number of images to process per batch (default: 10)
+- `CONFIDENCE_THRESHOLD` - Detection confidence threshold from 0.0 to 1.0 (default: 0.6)
+  - Lower values (e.g., 0.4) = more sensitive, may have false positives
+  - Higher values (e.g., 0.8) = less sensitive, only very confident detections
 
 ## Managing the Service
 

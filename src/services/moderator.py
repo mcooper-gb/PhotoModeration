@@ -15,21 +15,26 @@ class Moderator:
 
     VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv'}
 
-    def __init__(self, censored_dir):
+    def __init__(self, censored_dir, confidence_threshold=0.6):
         self.detector = NudeDetector()
         self.censored_dir = Path(censored_dir)
         self.censored_dir.mkdir(exist_ok=True)
+        self.confidence_threshold = confidence_threshold
 
     def is_video(self, file_path):
         return Path(file_path).suffix.lower() in self.VIDEO_EXTENSIONS
 
     def is_explicit(self, detections):
-        """Check if detections contain explicit content."""
+        """Check if detections contain explicit content above confidence threshold."""
         if isinstance(detections, dict):
             detections = [det for frame in detections.values()
                          if isinstance(frame, list) for det in frame]
 
-        return any(det.get('class') in self.EXPLICIT_LABELS for det in detections)
+        return any(
+            det.get('class') in self.EXPLICIT_LABELS and
+            det.get('score', 0) >= self.confidence_threshold
+            for det in detections
+        )
 
     def detect(self, file_path):
         """Detect explicit content in image or video."""
@@ -128,9 +133,12 @@ class Moderator:
                 try:
                     frame_detections = self.detector.detect(tmp_path)
 
-                    # Check if any explicit content detected
-                    has_explicit = any(det.get('class') in self.EXPLICIT_LABELS
-                                     for det in frame_detections)
+                    # Check if any explicit content detected above confidence threshold
+                    has_explicit = any(
+                        det.get('class') in self.EXPLICIT_LABELS and
+                        det.get('score', 0) >= self.confidence_threshold
+                        for det in frame_detections
+                    )
 
                     if has_explicit:
                         detection_count += 1
