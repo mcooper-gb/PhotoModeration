@@ -1,14 +1,24 @@
+"""Main entry point for the Photo Moderation Service."""
 import sys
 from pathlib import Path
-from config import Config
-from scanner import Scanner
-from moderator import Moderator
-from notifier import Notifier
-from watcher import MediaWatcher
+
+from src.config import Config
+from src.services.scanner import Scanner
+from src.services.moderator import Moderator
+from src.services.notifier import Notifier
+from src.services.watcher import MediaWatcher
 
 
 def initial_scan(scanner, moderator, notifier, batch_size):
-    """Perform an initial scan of existing files in the directory."""
+    """
+    Perform an initial scan of existing files in the directory.
+
+    Args:
+        scanner: Scanner instance for tracking files
+        moderator: Moderator instance for detection
+        notifier: Notifier instance for sending alerts
+        batch_size: Number of detections before sending batch
+    """
     print("\n=== Running initial scan ===")
 
     batch = []
@@ -32,13 +42,15 @@ def initial_scan(scanner, moderator, notifier, batch_size):
                             batch.append({
                                 'original_path': str(file_path),
                                 'censored_path': censored_path,
-                                'relative_path': Path(file_path).name
+                                'relative_path': Path(file_path).name,
+                                'detections': detections
                             })
                     else:
                         batch.append({
                             'original_path': str(file_path),
                             'censored_path': censored_result,
-                            'relative_path': Path(file_path).name
+                            'relative_path': Path(file_path).name,
+                            'detections': detections
                         })
 
             # Mark as scanned
@@ -60,7 +72,13 @@ def initial_scan(scanner, moderator, notifier, batch_size):
 
 
 def _send_batch(batch, notifier):
-    """Send a notification batch and clean up censored files."""
+    """
+    Send a notification batch and clean up censored files.
+
+    Args:
+        batch: List of detection results to send
+        notifier: Notifier instance
+    """
     print(f"\nSending batch of {len(batch)} notifications...")
 
     if notifier.send_notification(batch):

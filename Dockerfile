@@ -33,5 +33,8 @@ ENV CENSORED_DIR=/data/censored
 ENV DB_PATH=/data/db/scanned.db
 ENV BATCH_SIZE=10
 
+# Set Python path to include src directory
+ENV PYTHONPATH=/app
+
 # Run the application
-CMD ["python", "main.py"]
+CMD ["python", "app.py"]

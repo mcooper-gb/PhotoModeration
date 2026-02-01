@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Local data directories (mounted as volumes)
+images/
+censored/
+data/
+models/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Test files
+test_*.py
+tests/
+
+# Documentation
+README.md
+*.md
+docs/

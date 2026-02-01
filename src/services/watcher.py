@@ -65,10 +65,10 @@ class MediaFileHandler(FileSystemEventHandler):
                     if isinstance(censored_result, list):
                         # Video returns list of censored frame paths
                         for censored_path in censored_result:
-                            self._add_to_batch(file_path, censored_path)
+                            self._add_to_batch(file_path, censored_path, detections)
                     else:
                         # Image returns single Path
-                        self._add_to_batch(file_path, censored_result)
+                        self._add_to_batch(file_path, censored_result, detections)
 
             # Mark as scanned regardless of result
             self.scanner.mark_as_scanned(str(file_path))
@@ -76,14 +76,15 @@ class MediaFileHandler(FileSystemEventHandler):
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
 
-    def _add_to_batch(self, original_path, censored_path):
+    def _add_to_batch(self, original_path, censored_path, detections=None):
         """Add detection to batch and send if batch is full."""
         relative_path = original_path.name
 
         self.batch.append({
             'original_path': str(original_path),
             'censored_path': censored_path,
-            'relative_path': relative_path
+            'relative_path': relative_path,
+            'detections': detections or []
         })
 
         if len(self.batch) >= self.batch_size:
