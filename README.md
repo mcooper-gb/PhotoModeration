@@ -25,6 +25,7 @@ SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-app-password
 BATCH_SIZE=10
+BATCH_TIMEOUT=60
 CONFIDENCE_THRESHOLD=0.6
 ```
 
@@ -57,6 +58,7 @@ services:
       - SMTP_USER=${SMTP_USER:-your-smtp-user@gmail.com}
       - SMTP_PASS=${SMTP_PASS:-your-smtp-password}
       - BATCH_SIZE=${BATCH_SIZE:-10}
+      - BATCH_TIMEOUT=${BATCH_TIMEOUT:-60}
       - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.6}
       - SCAN_DIR=/data/scan
       - CENSORED_DIR=/data/censored
@@ -94,6 +96,9 @@ All settings can be configured via environment variables in the `.env` file:
 - `SMTP_USER` - SMTP username
 - `SMTP_PASS` - SMTP password (use app-specific password for Gmail)
 - `BATCH_SIZE` - Number of images to process per batch (default: 10)
+- `BATCH_TIMEOUT` - Seconds to wait before sending incomplete batch when watching for new files (default: 60, set to 0 to disable)
+  - During initial scan: batching always waits until batch is full or scan completes
+  - During watch mode: sends notification after timeout even if batch is not full
 - `CONFIDENCE_THRESHOLD` - Detection confidence threshold from 0.0 to 1.0 (default: 0.6)
   - Lower values (e.g., 0.4) = more sensitive, may have false positives
   - Higher values (e.g., 0.8) = less sensitive, only very confident detections

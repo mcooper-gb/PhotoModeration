@@ -100,6 +100,7 @@ def main():
     print(f"Monitoring: {Config.SCAN_DIR}")
     print(f"Output: {Config.CENSORED_DIR}")
     print(f"Batch size: {Config.BATCH_SIZE}")
+    print(f"Batch timeout: {Config.BATCH_TIMEOUT}s")
     print(f"Confidence threshold: {Config.CONFIDENCE_THRESHOLD}")
 
     # Initialize components
@@ -123,7 +124,8 @@ def main():
         scanner,
         moderator,
         notifier,
-        batch_size=Config.BATCH_SIZE
+        batch_size=Config.BATCH_SIZE,
+        batch_timeout=Config.BATCH_TIMEOUT
     )
 
     watcher.run()

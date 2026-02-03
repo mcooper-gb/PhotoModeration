@@ -1,4 +1,5 @@
 import time
+import threading
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -14,7 +15,7 @@ class MediaFileHandler(FileSystemEventHandler):
         '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'
     }
 
-    def __init__(self, scanner, moderator, notifier, batch_size=10):
+    def __init__(self, scanner, moderator, notifier, batch_size=10, batch_timeout=60):
         """
         Initialize the file handler.
 
@@ -23,12 +24,16 @@ class MediaFileHandler(FileSystemEventHandler):
             moderator: Moderator instance for detection and censoring
             notifier: Notifier instance for sending alerts
             batch_size: Number of detections before sending notification batch
+            batch_timeout: Seconds to wait before sending incomplete batch (0 to disable)
         """
         self.scanner = scanner
         self.moderator = moderator
         self.notifier = notifier
         self.batch_size = batch_size
+        self.batch_timeout = batch_timeout
         self.batch = []
+        self.batch_timer = None
+        self.timer_lock = threading.Lock()
 
     def on_created(self, event):
         """Called when a file or directory is created."""
@@ -80,18 +85,40 @@ class MediaFileHandler(FileSystemEventHandler):
         """Add detection to batch and send if batch is full."""
         relative_path = original_path.name
 
-        self.batch.append({
-            'original_path': str(original_path),
-            'censored_path': censored_path,
-            'relative_path': relative_path,
-            'detections': detections or []
-        })
+        with self.timer_lock:
+            self.batch.append({
+                'original_path': str(original_path),
+                'censored_path': censored_path,
+                'relative_path': relative_path,
+                'detections': detections or []
+            })
 
-        if len(self.batch) >= self.batch_size:
-            self._send_batch()
+            # Cancel existing timer if any
+            if self.batch_timer:
+                self.batch_timer.cancel()
+                self.batch_timer = None
+
+            if len(self.batch) >= self.batch_size:
+                self._send_batch()
+            elif self.batch_timeout > 0:
+                # Start timer for incomplete batch
+                self.batch_timer = threading.Timer(self.batch_timeout, self._send_batch_on_timeout)
+                self.batch_timer.start()
+
+    def _send_batch_on_timeout(self):
+        """Called by timer to send batch after timeout."""
+        with self.timer_lock:
+            if self.batch:
+                print(f"\nBatch timeout reached, sending {len(self.batch)} notification(s)...")
+                self._send_batch()
 
     def _send_batch(self):
         """Send notification batch and clean up censored files."""
+        # Cancel timer if active (may be called directly when batch is full)
+        if self.batch_timer:
+            self.batch_timer.cancel()
+            self.batch_timer = None
+
         if not self.batch:
             return
 
@@ -108,15 +135,21 @@ class MediaFileHandler(FileSystemEventHandler):
 
     def flush_batch(self):
         """Send any remaining items in the batch."""
-        if self.batch:
-            print(f"\nFlushing remaining batch of {len(self.batch)} notifications...")
-            self._send_batch()
+        with self.timer_lock:
+            # Cancel timer
+            if self.batch_timer:
+                self.batch_timer.cancel()
+                self.batch_timer = None
+
+            if self.batch:
+                print(f"\nFlushing remaining batch of {len(self.batch)} notifications...")
+                self._send_batch()
 
 
 class MediaWatcher:
     """Watches a directory for new media files and processes them."""
 
-    def __init__(self, directory, scanner, moderator, notifier, batch_size=10):
+    def __init__(self, directory, scanner, moderator, notifier, batch_size=10, batch_timeout=60):
         """
         Initialize the watcher.
 
@@ -126,9 +159,10 @@ class MediaWatcher:
             moderator: Moderator instance for detection and censoring
             notifier: Notifier instance for sending alerts
             batch_size: Number of detections before sending notification batch
+            batch_timeout: Seconds to wait before sending incomplete batch (0 to disable)
         """
         self.directory = Path(directory)
-        self.event_handler = MediaFileHandler(scanner, moderator, notifier, batch_size)
+        self.event_handler = MediaFileHandler(scanner, moderator, notifier, batch_size, batch_timeout)
         self.observer = Observer()
 
     def start(self):

@@ -12,6 +12,7 @@ class Config:
     SMTP_PASS = os.getenv('SMTP_PASS')
     DB_PATH = os.getenv('DB_PATH', 'scanned_images.db')
     BATCH_SIZE = int(os.getenv('BATCH_SIZE', 10))
+    BATCH_TIMEOUT = int(os.getenv('BATCH_TIMEOUT', 60))
     CENSORED_DIR = os.getenv('CENSORED_DIR', 'censored_images')
     CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', 0.6))
 
