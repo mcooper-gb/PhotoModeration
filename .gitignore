@@ -45,6 +45,7 @@ env/
 /images/
 /censored/
 /data/
+/.venv/
 
 # Models (NudeNet downloads these automatically)
 /models/

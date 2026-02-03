@@ -42,7 +42,7 @@ class MediaFileHandler(FileSystemEventHandler):
             return
 
         # Check if already processed
-        if self.scanner.is_scanned(str(file_path)):
+        if not self.scanner.is_new_or_modified(str(file_path)):
             return
 
         print(f"\nNew file detected: {file_path.name}")
