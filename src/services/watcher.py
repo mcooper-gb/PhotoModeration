@@ -46,8 +46,16 @@ class MediaFileHandler(FileSystemEventHandler):
         if file_path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
             return
 
-        # Check if already processed
-        if not self.scanner.is_new_or_modified(str(file_path)):
+        # Check if file still exists (may have been moved/deleted)
+        if not file_path.exists():
+            return
+
+        try:
+            # Check if already processed
+            if not self.scanner.is_new_or_modified(str(file_path)):
+                return
+        except FileNotFoundError:
+            # File was deleted/moved between detection and check
             return
 
         print(f"\nNew file detected: {file_path.name}")

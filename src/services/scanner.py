@@ -23,10 +23,15 @@ class Scanner:
             conn.close()
 
     def is_new_or_modified(self, file_path):
-        stats = os.stat(file_path)
+        try:
+            stats = os.stat(file_path)
+        except (FileNotFoundError, OSError):
+            # File doesn't exist or can't be accessed
+            raise FileNotFoundError(f"Cannot access file: {file_path}")
+
         mtime = stats.st_mtime
         size = stats.st_size
-        
+
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.execute('SELECT mtime, size FROM scanned_files WHERE path = ?', (str(file_path),))
@@ -59,5 +64,9 @@ class Scanner:
             for file in files:
                 file_path = Path(root) / file
                 if file_path.suffix.lower() in extensions:
-                    if self.is_new_or_modified(file_path):
-                        yield file_path
+                    try:
+                        if self.is_new_or_modified(file_path):
+                            yield file_path
+                    except FileNotFoundError:
+                        # File was deleted/moved during scan
+                        continue
