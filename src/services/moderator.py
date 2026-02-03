@@ -10,7 +10,6 @@ class Moderator:
         'MALE_GENITALIA_EXPOSED',
         'BUTTOCKS_EXPOSED',
         'ANUS_EXPOSED',
-        'MALE_BREAST_EXPOSED',
     }
 
     VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv'}
