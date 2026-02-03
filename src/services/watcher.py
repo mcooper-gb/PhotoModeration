@@ -1,8 +1,11 @@
 import time
-import threading
 from pathlib import Path
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+from src.services.batch_manager import BatchManager
+from src.utils import add_censored_results_to_batch
 
 
 class MediaFileHandler(FileSystemEventHandler):
@@ -28,12 +31,7 @@ class MediaFileHandler(FileSystemEventHandler):
         """
         self.scanner = scanner
         self.moderator = moderator
-        self.notifier = notifier
-        self.batch_size = batch_size
-        self.batch_timeout = batch_timeout
-        self.batch = []
-        self.batch_timer = None
-        self.timer_lock = threading.Lock()
+        self.batch_manager = BatchManager(notifier, batch_size, batch_timeout)
 
     def on_created(self, event):
         """Called when a file or directory is created."""
@@ -75,13 +73,12 @@ class MediaFileHandler(FileSystemEventHandler):
 
                 if censored_result:
                     # Handle different return types (Path for images, list for videos)
-                    if isinstance(censored_result, list):
-                        # Video returns list of censored frame paths
-                        for censored_path in censored_result:
-                            self._add_to_batch(file_path, censored_path, detections)
-                    else:
-                        # Image returns single Path
-                        self._add_to_batch(file_path, censored_result, detections)
+                    batch = []
+                    add_censored_results_to_batch(file_path, censored_result, detections, batch)
+
+                    # Add each item to the batch manager
+                    for item in batch:
+                        self.batch_manager.add(item)
 
             # Mark as scanned regardless of result
             self.scanner.mark_as_scanned(str(file_path))
@@ -89,69 +86,9 @@ class MediaFileHandler(FileSystemEventHandler):
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
 
-    def _add_to_batch(self, original_path, censored_path, detections=None):
-        """Add detection to batch and send if batch is full."""
-        relative_path = original_path.name
-
-        with self.timer_lock:
-            self.batch.append({
-                'original_path': str(original_path),
-                'censored_path': censored_path,
-                'relative_path': relative_path,
-                'detections': detections or []
-            })
-
-            # Cancel existing timer if any
-            if self.batch_timer:
-                self.batch_timer.cancel()
-                self.batch_timer = None
-
-            if len(self.batch) >= self.batch_size:
-                self._send_batch()
-            elif self.batch_timeout > 0:
-                # Start timer for incomplete batch
-                self.batch_timer = threading.Timer(self.batch_timeout, self._send_batch_on_timeout)
-                self.batch_timer.start()
-
-    def _send_batch_on_timeout(self):
-        """Called by timer to send batch after timeout."""
-        with self.timer_lock:
-            if self.batch:
-                print(f"\nBatch timeout reached, sending {len(self.batch)} notification(s)...")
-                self._send_batch()
-
-    def _send_batch(self):
-        """Send notification batch and clean up censored files."""
-        # Cancel timer if active (may be called directly when batch is full)
-        if self.batch_timer:
-            self.batch_timer.cancel()
-            self.batch_timer = None
-
-        if not self.batch:
-            return
-
-        print(f"\nSending batch of {len(self.batch)} notifications...")
-
-        if self.notifier.send_notification(self.batch):
-            # Clean up censored files after successful notification
-            for item in self.batch:
-                censored_path = item['censored_path']
-                if isinstance(censored_path, Path) and censored_path.exists():
-                    censored_path.unlink()
-
-        self.batch = []
-
     def flush_batch(self):
         """Send any remaining items in the batch."""
-        with self.timer_lock:
-            # Cancel timer
-            if self.batch_timer:
-                self.batch_timer.cancel()
-                self.batch_timer = None
-
-            if self.batch:
-                print(f"\nFlushing remaining batch of {len(self.batch)} notifications...")
-                self._send_batch()
+        self.batch_manager.flush()
 
 
 class MediaWatcher:

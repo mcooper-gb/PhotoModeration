@@ -2,6 +2,7 @@
 /images/
 /censored/
 /data/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -40,12 +41,6 @@ env/
 # Environment variables
 .env
 .env.local
-
-# Application data
-/images/
-/censored/
-/data/
-/.venv/
 
 # Models (NudeNet downloads these automatically)
 /models/

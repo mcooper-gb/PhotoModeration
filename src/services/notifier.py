@@ -1,12 +1,11 @@
 """Email notification service for moderation alerts."""
 import smtplib
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
-from pathlib import Path
 
-from src.utils.exif_extractor import ExifExtractor
 from src.templates.email_template import EmailTemplate
+from src.utils.exif_extractor import ExifExtractor
 
 
 class Notifier:

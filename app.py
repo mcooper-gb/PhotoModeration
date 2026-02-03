@@ -1,12 +1,12 @@
 """Main entry point for the Photo Moderation Service."""
 import sys
-from pathlib import Path
 
 from src.config import Config
 from src.services.scanner import Scanner
 from src.services.moderator import Moderator
 from src.services.notifier import Notifier
 from src.services.watcher import MediaWatcher
+from src.utils import add_censored_results_to_batch, cleanup_censored_files
 
 
 def initial_scan(scanner, moderator, notifier, batch_size):
@@ -37,21 +37,7 @@ def initial_scan(scanner, moderator, notifier, batch_size):
 
                 if censored_result:
                     # Handle different return types (Path for images, list for videos)
-                    if isinstance(censored_result, list):
-                        for censored_path in censored_result:
-                            batch.append({
-                                'original_path': str(file_path),
-                                'censored_path': censored_path,
-                                'relative_path': Path(file_path).name,
-                                'detections': detections
-                            })
-                    else:
-                        batch.append({
-                            'original_path': str(file_path),
-                            'censored_path': censored_result,
-                            'relative_path': Path(file_path).name,
-                            'detections': detections
-                        })
+                    add_censored_results_to_batch(file_path, censored_result, detections, batch)
 
             # Mark as scanned
             scanner.mark_as_scanned(str(file_path))
@@ -82,10 +68,7 @@ def _send_batch(batch, notifier):
     print(f"\nSending batch of {len(batch)} notifications...")
 
     if notifier.send_notification(batch):
-        for item in batch:
-            censored_path = item['censored_path']
-            if isinstance(censored_path, Path) and censored_path.exists():
-                censored_path.unlink()
+        cleanup_censored_files(batch)
 
 
 def main():

@@ -21,7 +21,7 @@ class ExifExtractor:
         """
         try:
             image = Image.open(image_path)
-            exif_data = image._getexif()
+            exif_data = image.getexif()
 
             if not exif_data:
                 return None
