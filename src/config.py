@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Config:
     SCAN_DIR = os.getenv('SCAN_DIR', '.')
     EMAIL_ADDRESS = os.getenv('EMAIL_ADDRESS')

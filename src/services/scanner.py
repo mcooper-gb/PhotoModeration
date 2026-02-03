@@ -2,6 +2,7 @@ import os
 import sqlite3
 from pathlib import Path
 
+
 class Scanner:
     def __init__(self, scan_dir, db_path):
         self.scan_dir = Path(scan_dir)
@@ -12,12 +13,18 @@ class Scanner:
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute('''
-                CREATE TABLE IF NOT EXISTS scanned_files (
-                    path TEXT PRIMARY KEY,
-                    mtime REAL,
-                    size INTEGER
-                )
-            ''')
+                         CREATE TABLE IF NOT EXISTS scanned_files
+                         (
+                             path
+                             TEXT
+                             PRIMARY
+                             KEY,
+                             mtime
+                             REAL,
+                             size
+                             INTEGER
+                         )
+                         ''')
             conn.commit()
         finally:
             conn.close()
@@ -47,7 +54,7 @@ class Scanner:
         stats = os.stat(file_path)
         mtime = stats.st_mtime
         size = stats.st_size
-        
+
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute('''

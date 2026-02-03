@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from nudenet import NudeDetector
 
+
 class Moderator:
     EXPLICIT_LABELS = {
         'FEMALE_BREAST_EXPOSED',
@@ -27,7 +28,7 @@ class Moderator:
         """Check if detections contain explicit content above confidence threshold."""
         if isinstance(detections, dict):
             detections = [det for frame in detections.values()
-                         if isinstance(frame, list) for det in frame]
+                          if isinstance(frame, list) for det in frame]
 
         return any(
             det.get('class') in self.EXPLICIT_LABELS and
@@ -72,7 +73,8 @@ class Moderator:
             actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
             if actual_width == target_width and actual_height == target_height:
-                print(f"Codec-level scaling successful: {original_width}x{original_height} -> {target_width}x{target_height}")
+                print(
+                    f"Codec-level scaling successful: {original_width}x{original_height} -> {target_width}x{target_height}")
                 width, height = target_width, target_height
             else:
                 print(f"Codec doesn't support scaling, will use manual downscaling")
