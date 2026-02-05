@@ -4,25 +4,20 @@ from pathlib import Path
 from nudenet import NudeDetector
 
 
+
 class Moderator:
-    EXPLICIT_LABELS = {
-        'FEMALE_BREAST_EXPOSED',
-        'FEMALE_GENITALIA_EXPOSED',
-        'MALE_GENITALIA_EXPOSED',
-        'BUTTOCKS_EXPOSED',
-        'ANUS_EXPOSED',
-    }
 
-    VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv'}
-
-    def __init__(self, censored_dir, confidence_threshold=0.6):
+    def __init__(self, explicit_labels, image_extensions,video_extensions, censored_dir, confidence_threshold=0.6):
         self.detector = NudeDetector()
+        self.explicit_labels = explicit_labels
+        self.image_extensions = image_extensions
+        self.video_extensions = video_extensions
         self.censored_dir = Path(censored_dir)
         self.censored_dir.mkdir(exist_ok=True)
         self.confidence_threshold = confidence_threshold
 
     def is_video(self, file_path):
-        return Path(file_path).suffix.lower() in self.VIDEO_EXTENSIONS
+        return Path(file_path).suffix.lower() in self.video_extensions
 
     def is_explicit(self, detections):
         """Check if detections contain explicit content above confidence threshold."""
@@ -31,7 +26,7 @@ class Moderator:
                           if isinstance(frame, list) for det in frame]
 
         return any(
-            det.get('class') in self.EXPLICIT_LABELS and
+            det.get('class') in self.explicit_labels and
             det.get('score', 0) >= self.confidence_threshold
             for det in detections
         )
@@ -136,7 +131,7 @@ class Moderator:
 
                     # Check if any explicit content detected above confidence threshold
                     has_explicit = any(
-                        det.get('class') in self.EXPLICIT_LABELS and
+                        det.get('class') in self.explicit_labels and
                         det.get('score', 0) >= self.confidence_threshold
                         for det in frame_detections
                     )
@@ -165,7 +160,7 @@ class Moderator:
         print(f"\n=== Censoring {Path(file_path).name} ===")
         censored_path = self.detector.censor(
             str(file_path),
-            classes=list(self.EXPLICIT_LABELS),
+            classes=list(self.explicit_labels),
             output_path=str(output_path)
         )
 
@@ -207,7 +202,7 @@ class Moderator:
 
                 censored_path = self.detector.censor(
                     tmp_path,
-                    classes=list(self.EXPLICIT_LABELS),
+                    classes=list(self.explicit_labels),
                     output_path=str(output_path)
                 )
 

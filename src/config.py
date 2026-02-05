@@ -16,6 +16,16 @@ class Config:
     BATCH_TIMEOUT = int(os.getenv('BATCH_TIMEOUT', 60))
     CENSORED_DIR = os.getenv('CENSORED_DIR', 'censored_images')
     CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', 0.6))
+    EXPLICIT_LABELS = {
+        'FEMALE_BREAST_EXPOSED',
+        'FEMALE_GENITALIA_EXPOSED',
+        'MALE_GENITALIA_EXPOSED',
+        'BUTTOCKS_EXPOSED',
+        'ANUS_EXPOSED',
+    }
+    VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv'}
+    IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
+
 
     @classmethod
     def validate(cls):

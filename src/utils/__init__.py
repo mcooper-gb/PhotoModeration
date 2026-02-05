@@ -53,3 +53,24 @@ def add_censored_results_to_batch(original_path, censored_result, detections, ba
     else:
         # Image returns single Path
         batch.append(create_batch_item(original_path, censored_result, detections))
+
+def process_media_file(file_path, moderator, scanner, batch):
+    """
+    Process a single media file for explicit content.
+
+    Args:
+        file_path: Path to the file to process
+        moderator: Moderator instance for detection and censoring
+        scanner: Scanner instance to mark file as scanned
+        batch: List to append detection results to
+    """
+    detections = moderator.detect(file_path)
+
+    if moderator.is_explicit(detections):
+        print(f"  Explicit content detected!")
+        censored_result = moderator.censor(file_path, detections)
+
+        if censored_result:
+            add_censored_results_to_batch(file_path, censored_result, detections, batch)
+
+    scanner.mark_as_scanned(str(file_path))

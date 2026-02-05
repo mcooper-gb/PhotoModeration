@@ -18,7 +18,7 @@ Automated photo scanning service that detects explicit content, censors flagged 
 1. **Clone or copy the project files to your machine**
 
 2. **Create a `.env` file** in the project directory:
-```
+```dotenv
 EMAIL_ADDRESS=recipient@example.com
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587

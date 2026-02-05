@@ -5,18 +5,12 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from src.services.batch_manager import BatchManager
-from src.utils import add_censored_results_to_batch
+from src.utils import process_media_file
 
 
 class MediaFileHandler(FileSystemEventHandler):
     """Handles file system events for image and video files."""
 
-    SUPPORTED_EXTENSIONS = {
-        # Images
-        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff',
-        # Videos
-        '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'
-    }
 
     def __init__(self, scanner, moderator, notifier, batch_size=10, batch_timeout=60):
         """
@@ -32,6 +26,7 @@ class MediaFileHandler(FileSystemEventHandler):
         self.scanner = scanner
         self.moderator = moderator
         self.batch_manager = BatchManager(notifier, batch_size, batch_timeout)
+        self.supported_extensions = moderator.image_extensions | moderator.video_extensions
 
     def on_created(self, event):
         """Called when a file or directory is created."""
@@ -41,7 +36,7 @@ class MediaFileHandler(FileSystemEventHandler):
         file_path = Path(event.src_path)
 
         # Check if it's a supported media file
-        if file_path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
+        if file_path.suffix.lower() not in self.supported_extensions:
             return
 
         # Check if file still exists (may have been moved/deleted)
@@ -62,33 +57,14 @@ class MediaFileHandler(FileSystemEventHandler):
     def _process_file(self, file_path):
         """Process a single file for explicit content."""
         try:
-            # Run detection
-            detections = self.moderator.detect(file_path)
+            batch = []
+            process_media_file(file_path, self.moderator, self.scanner, batch)
 
-            if self.moderator.is_explicit(detections):
-                print(f"Explicit content detected in {file_path}")
-
-                # Censor the content
-                censored_result = self.moderator.censor(file_path, detections)
-
-                if censored_result:
-                    # Handle different return types (Path for images, list for videos)
-                    batch = []
-                    add_censored_results_to_batch(file_path, censored_result, detections, batch)
-
-                    # Add each item to the batch manager
-                    for item in batch:
-                        self.batch_manager.add(item)
-
-            # Mark as scanned regardless of result
-            self.scanner.mark_as_scanned(str(file_path))
+            for item in batch:
+                self.batch_manager.add(item)
 
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
-
-    def flush_batch(self):
-        """Send any remaining items in the batch."""
-        self.batch_manager.flush()
 
 
 class MediaWatcher:
@@ -124,7 +100,7 @@ class MediaWatcher:
         self.observer.join()
 
         # Send any remaining batch items
-        self.event_handler.flush_batch()
+        self.event_handler.batch_manager.flush()
         print("Watcher stopped.")
 
     def run(self):

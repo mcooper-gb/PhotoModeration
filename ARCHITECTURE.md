@@ -10,9 +10,9 @@ PhotoModeration/
 ├── requirements.txt            # Python dependencies
 ├── Dockerfile                  # Docker configuration
 ├── docker-compose.yml          # Docker Compose configuration
-├── .dockerignore              # Docker ignore patterns
+├── .dockerignore               # Docker ignore patterns
 ├── README.md                   # User documentation
-├── ARCHITECTURE.md            # This file
+├── ARCHITECTURE.md             # This file
 │
 └── src/                        # Source code
     ├── __init__.py

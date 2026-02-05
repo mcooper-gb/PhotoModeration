@@ -6,7 +6,7 @@ from src.services.scanner import Scanner
 from src.services.moderator import Moderator
 from src.services.notifier import Notifier
 from src.services.watcher import MediaWatcher
-from src.utils import add_censored_results_to_batch, cleanup_censored_files
+from src.utils import cleanup_censored_files, process_media_file
 
 
 def initial_scan(scanner, moderator, notifier, batch_size):
@@ -17,7 +17,7 @@ def initial_scan(scanner, moderator, notifier, batch_size):
         scanner: Scanner instance for tracking files
         moderator: Moderator instance for detection
         notifier: Notifier instance for sending alerts
-        batch_size: Number of detections before sending batch
+        batch_size: Maximum number of detections before sending batch
     """
     print("\n=== Running initial scan ===")
 
@@ -26,29 +26,19 @@ def initial_scan(scanner, moderator, notifier, batch_size):
 
     for file_path in scanner.get_new_files():
         print(f"Processing: {file_path}")
-        processed_count += 1
 
         try:
-            detections = moderator.detect(file_path)
+            process_media_file(file_path, moderator, scanner, batch)
 
-            if moderator.is_explicit(detections):
-                print(f"  Explicit content detected!")
-                censored_result = moderator.censor(file_path, detections)
-
-                if censored_result:
-                    # Handle different return types (Path for images, list for videos)
-                    add_censored_results_to_batch(file_path, censored_result, detections, batch)
-
-            # Mark as scanned
-            scanner.mark_as_scanned(str(file_path))
-
-            # Send batch if full
             if len(batch) >= batch_size:
                 _send_batch(batch, notifier)
                 batch = []
 
         except Exception as e:
             print(f"  Error processing {file_path}: {e}")
+
+        finally:
+            processed_count += 1
 
     # Send the remaining batch
     if batch:
@@ -88,7 +78,13 @@ def main():
 
     # Initialize components
     scanner = Scanner(Config.SCAN_DIR, Config.DB_PATH)
-    moderator = Moderator(Config.CENSORED_DIR, Config.CONFIDENCE_THRESHOLD)
+    moderator = Moderator(
+        Config.EXPLICIT_LABELS,
+        Config.IMAGE_EXTENSIONS,
+        Config.VIDEO_EXTENSIONS,
+        Config.CENSORED_DIR,
+        Config.CONFIDENCE_THRESHOLD
+    )
     notifier = Notifier(
         Config.SMTP_SERVER,
         Config.SMTP_PORT,
