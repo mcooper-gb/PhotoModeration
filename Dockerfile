@@ -1,5 +1,15 @@
 FROM python:3.13-bookworm
 
+# Image metadata (appears in TrueNAS and other container managers)
+LABEL org.opencontainers.image.source="https://github.com/mcooper-gb/PhotoModeration"
+LABEL org.opencontainers.image.documentation="https://github.com/mcooper-gb/PhotoModeration"
+LABEL org.opencontainers.image.url="https://hub.docker.com/r/mcoopergb/photo-moderation"
+LABEL org.opencontainers.image.version="1.1.4"
+LABEL org.opencontainers.image.title="Photo Moderation"
+LABEL org.opencontainers.image.description="Automated media content moderation service using NudeNet"
+LABEL org.opencontainers.image.vendor="Mark Cooper"
+LABEL org.opencontainers.image.licenses="MIT"
+
 # Install system dependencies for OpenCV
 RUN apt-get clean && \
     apt-get update --fix-missing && \
