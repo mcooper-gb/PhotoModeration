@@ -4,7 +4,7 @@ FROM python:3.13-bookworm
 LABEL org.opencontainers.image.source="https://github.com/mcooper-gb/PhotoModeration"
 LABEL org.opencontainers.image.documentation="https://github.com/mcooper-gb/PhotoModeration"
 LABEL org.opencontainers.image.url="https://hub.docker.com/r/mcoopergb/photo-moderation"
-LABEL org.opencontainers.image.version="1.1.4"
+LABEL org.opencontainers.image.version="1.1.5"
 LABEL org.opencontainers.image.title="Photo Moderation"
 LABEL org.opencontainers.image.description="Automated media content moderation service using NudeNet"
 LABEL org.opencontainers.image.vendor="Mark Cooper"
