@@ -44,6 +44,8 @@ class ReviewStore:
     def _init_db(self):
         conn = self._connect()
         try:
+            # The watcher and the dashboard threads both write here.
+            conn.execute('PRAGMA journal_mode=WAL')
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS flagged_assets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,15 +141,7 @@ class ReviewStore:
                 ))
                 row = cursor.fetchone()
                 conn.commit()
-                if row:
-                    return row['id']
-
-                # Fall back for SQLite builds without RETURNING support.
-                existing = conn.execute(
-                    'SELECT id FROM flagged_assets WHERE original_path = ? AND frame_number = ?',
-                    (str(original_path), frame_key)
-                ).fetchone()
-                return existing['id'] if existing else None
+                return row['id'] if row else None
             except sqlite3.Error as e:
                 print(f"Failed to record review item for {original_path}: {e}")
                 return None
@@ -252,6 +246,11 @@ class ReviewStore:
                 conn.execute(f'UPDATE flagged_assets SET {", ".join(fields)} WHERE id = ?', params)
                 conn.commit()
                 return True
+            except sqlite3.Error as e:
+                # Callers record an outcome that has already happened in Immich,
+                # so a failure here has to be reportable rather than fatal.
+                print(f"Failed to update review item {item_id}: {e}")
+                return False
             finally:
                 conn.close()
 

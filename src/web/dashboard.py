@@ -68,9 +68,13 @@ class Dashboard:
             if not self.username:
                 return view(*args, **kwargs)
 
+            # An empty configured password would otherwise match an empty
+            # supplied one, leaving the dashboard open to anyone who guesses
+            # the username.
             auth = request.authorization
-            if (auth and auth.username == self.username
-                    and secrets.compare_digest(auth.password or '', self.password or '')):
+            if (self.password and auth
+                    and secrets.compare_digest(auth.username or '', self.username)
+                    and secrets.compare_digest(auth.password or '', self.password)):
                 return view(*args, **kwargs)
 
             return Response(
@@ -260,10 +264,16 @@ class Dashboard:
                 detail = f"{detail}. Owner not notified: email is not configured"
 
         # A trashed asset can still be restored, so it keeps its preview.
-        self.review_store.set_status(
+        recorded = self.review_store.set_status(
             item_id, STATUS_DELETED, detail,
             owner_notified=notified, drop_preview=permanent
         )
+
+        if not recorded:
+            flash(f'{detail}. The review queue could not be updated, so this item still '
+                  f'shows as pending - do not delete it again.', 'error')
+            return
+
         flash(detail, 'success')
 
     def _restore(self, item):
@@ -277,7 +287,8 @@ class Dashboard:
             self.review_store.set_status(item['id'], STATUS_PENDING, detail)
             flash(detail, 'success')
         else:
-            self.review_store.set_status(item['id'], STATUS_ERROR, detail)
+            # Overwriting the row would lose the record of the delete that
+            # was actually carried out.
             flash(f'Restore failed: {detail}', 'error')
 
     @staticmethod

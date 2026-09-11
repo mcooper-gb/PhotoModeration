@@ -76,7 +76,7 @@ class Config:
 
     REVIEW_DIR = os.getenv('REVIEW_DIR', 'review_images')
     REVIEW_DB_PATH = os.getenv('REVIEW_DB_PATH', 'review_queue.db')
-    # Resolved items older than this are purged on startup (0 disables).
+    # Resolved items older than this are purged at startup and periodically (0 disables).
     REVIEW_RETENTION_DAYS = int(os.getenv('REVIEW_RETENTION_DAYS', 30))
 
     @classmethod
@@ -119,6 +119,9 @@ class Config:
 
         if cls.IMMICH_DB_HOST and not cls.IMMICH_DB_PASSWORD and not cls.IMMICH_DB_URL:
             raise ValueError("IMMICH_DB_HOST is set but IMMICH_DB_PASSWORD is missing")
+
+        if cls.DASHBOARD_USER and not cls.DASHBOARD_PASS:
+            raise ValueError("DASHBOARD_USER is set but DASHBOARD_PASS is missing")
 
         if cls.immich_enabled() and not cls.IMMICH_EXTERNAL_URL:
             print("Warning: IMMICH_EXTERNAL_URL is not set, so Immich links will be omitted")

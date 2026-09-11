@@ -108,7 +108,8 @@
                             onclick="return confirm('Delete this asset from Immich?')">Delete asset</button>
                 </fieldset>
 
-                {% if item.status == 'deleted' %}
+                {# Only a trashed asset keeps its preview, so this is also what says the delete was recoverable. #}
+                {% if item.status == 'deleted' and item.redacted_path %}
                     <button class="button button-secondary" type="submit" name="action" value="restore">
                         Restore from trash
                     </button>
