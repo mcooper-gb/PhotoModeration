@@ -84,7 +84,7 @@ Manages application configuration from environment variables. Validates required
 - Detects the table naming the running Immich version uses and verifies the columns it
   needs before allowing any write
 - Resolves assets and uploaders by original path, checksum, then filename, refusing an
-  ambiguous filename match
+  ambiguous filename match and treating any filename match as uploader identity only
 - Identifies the uploader from the library path in a single query when no asset row
   matches, comparing the directory names against user ids and storage labels at once
 - Reads Immich's configured trash retention when the settings table is readable

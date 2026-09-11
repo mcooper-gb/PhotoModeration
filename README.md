@@ -84,7 +84,9 @@ update, so clients pick the change up through normal sync.
 ### How assets are matched
 
 Each flagged file is matched on its original path, then its SHA1 checksum, then its
-filename. A filename matching more than one asset is rejected rather than guessed.
+filename. A filename matching more than one asset is rejected rather than guessed, and
+a filename match only names the uploader: it never links an asset that could be deleted,
+because a filename says nothing about which asset a file is.
 
 If nothing matches, the uploader is still recovered from the library path, which contains
 the user id or storage label under Immich's default storage template.
@@ -203,12 +205,12 @@ scans, blurs and emails, but cannot name the uploader or delete assets.
 - `DASHBOARD_ENABLED` - Serve the dashboard (default: true)
 - `DASHBOARD_HOST` / `DASHBOARD_PORT` - Bind address and port (default: 0.0.0.0:8080)
 - `DASHBOARD_URL` - Public base URL used in email links
-- `DASHBOARD_USER` / `DASHBOARD_PASS` - Optional HTTP basic auth
+- `DASHBOARD_USER` / `DASHBOARD_PASS` - Optional HTTP basic auth (setting the user without a password is refused at startup)
 - `DASHBOARD_ALLOW_REVEAL` - Allow viewing unredacted originals (default: true)
 - `DASHBOARD_PAGE_SIZE` - Items per page (default: 24)
 - `REVIEW_DIR` - Where retained redacted previews are stored
 - `REVIEW_DB_PATH` - Review queue database path
-- `REVIEW_RETENTION_DAYS` - Purge resolved items older than this on startup (default: 30, 0 disables)
+- `REVIEW_RETENTION_DAYS` - Purge resolved items older than this, at startup and every 6 hours (default: 30, 0 disables)
 
 ## Usage
 

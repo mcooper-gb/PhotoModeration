@@ -7,6 +7,8 @@ from watchdog.observers import Observer
 from src.services.batch_manager import BatchManager
 from src.utils import process_media_file
 
+PURGE_INTERVAL_SECONDS = 6 * 60 * 60
+
 
 class MediaFileHandler(FileSystemEventHandler):
     """Handles file system events for image and video files."""
@@ -81,7 +83,7 @@ class MediaWatcher:
     """Watches a directory for new media files and processes them."""
 
     def __init__(self, directory, scanner, moderator, notifier, batch_size=10, batch_timeout=60,
-                 immich=None, review_store=None, dashboard_url=None):
+                 immich=None, review_store=None, dashboard_url=None, retention_days=0):
         """
         Initialize the watcher.
 
@@ -95,6 +97,7 @@ class MediaWatcher:
             immich: Optional Immich integration for asset and owner lookup
             review_store: Optional ReviewStore for the moderation dashboard
             dashboard_url: Optional dashboard base URL used in review links
+            retention_days: Review retention window applied while running (0 disables)
         """
         self.directory = Path(directory)
         self.event_handler = MediaFileHandler(
@@ -102,6 +105,9 @@ class MediaWatcher:
             immich, review_store, dashboard_url
         )
         self.observer = Observer()
+        self.review_store = review_store
+        self.retention_days = retention_days
+        self.next_purge = time.monotonic() + PURGE_INTERVAL_SECONDS
 
     def start(self):
         """Start watching the directory."""
@@ -120,6 +126,24 @@ class MediaWatcher:
         self.event_handler.batch_manager.flush()
         print("Watcher stopped.")
 
+    def purge_due_reviews(self):
+        """
+        Apply the review retention window.
+
+        The service runs for months at a time, so purging only at startup
+        leaves retained previews of explicit content on disk indefinitely.
+        """
+        if not self.review_store or not self.retention_days:
+            return
+
+        if time.monotonic() < self.next_purge:
+            return
+
+        self.next_purge = time.monotonic() + PURGE_INTERVAL_SECONDS
+        purged = self.review_store.purge_resolved(self.retention_days)
+        if purged:
+            print(f"Purged {purged} resolved review items older than {self.retention_days} days")
+
     def run(self):
         """Run the watcher indefinitely until interrupted."""
         self.start()
@@ -127,5 +151,6 @@ class MediaWatcher:
         try:
             while True:
                 time.sleep(1)
+                self.purge_due_reviews()
         except KeyboardInterrupt:
             self.stop()

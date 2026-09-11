@@ -224,7 +224,8 @@ def main():
         batch_timeout=Config.BATCH_TIMEOUT,
         immich=immich,
         review_store=review_store,
-        dashboard_url=dashboard_url
+        dashboard_url=dashboard_url,
+        retention_days=Config.REVIEW_RETENTION_DAYS
     )
 
     watcher.run()
