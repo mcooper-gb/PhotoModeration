@@ -6,12 +6,7 @@ created them, there is no admin permission for another user's asset, no
 /admin/assets endpoint, and no impersonation, so an admin key is rejected on
 anyone else's asset.
 """
-import re
 from pathlib import Path
-
-UUID_PATTERN = re.compile(
-    r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
-)
 
 
 class Immich:
@@ -77,34 +72,17 @@ class Immich:
         # The asset row was not found, but Immich's default storage template
         # puts the owner's user id or storage label in the path, so the
         # moderator can still be told whose upload this is.
-        owner_id = self._owner_id_from_path(file_path)
-        if owner_id:
-            owner = self._safely(lambda: self.database.get_user(owner_id),
-                                 f"user lookup for {owner_id}") or {}
+        owner = self._safely(lambda: self.database.find_user_for_path(file_path),
+                             f"uploader lookup for {file_path.name}")
+        if owner:
             context.update({
-                'owner_id': owner_id,
-                'owner_name': owner.get('name'),
-                'owner_email': owner.get('email'),
+                'owner_id': owner['id'],
+                'owner_name': owner['name'],
+                'owner_email': owner['email'],
                 'resolved_by': 'library-path',
             })
 
         return context
-
-    def _owner_id_from_path(self, file_path):
-        """Derive the owner from the library path, by user id or storage label."""
-        parts = Path(file_path).parts
-
-        for part in parts:
-            if UUID_PATTERN.fullmatch(part):
-                return part
-
-        for part in parts:
-            user_id = self._safely(lambda: self.database.user_id_for_storage_label(part),
-                                   f"storage label lookup for {part}")
-            if user_id:
-                return user_id
-
-        return None
 
     def asset_link(self, asset_id):
         """Build the Immich web link for an asset."""

@@ -13,6 +13,7 @@ only touch those columns - see README.md.
 """
 import hashlib
 import threading
+from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
@@ -182,43 +183,65 @@ class ImmichDatabase:
 
         return None
 
-    def get_user(self, user_id):
+    def find_user_for_path(self, file_path):
         """
-        Look up a user by id.
+        Identify the uploader from the library path, for a file with no asset row.
+
+        Immich's default storage template names the directory after the owner's
+        user id or storage label, so both are matched in one query. Comparing
+        the id as text means an ordinary directory name is simply a non-match
+        rather than a malformed-uuid error, so no shape check is needed first.
+
+        Args:
+            file_path: Path to the local file
 
         Returns:
-            dict or None: User with 'id', 'name' and 'email'
+            dict or None: User with 'id', 'name' and 'email', or None when
+            nothing matched or more than one user did
         """
         self._require_schema()
 
-        with self._connect() as conn:
-            row = conn.execute(
-                f'SELECT id, name, email FROM "{self.user_table}" WHERE id = %s', (user_id,)
-            ).fetchone()
-
-        if not row:
+        segments = self._library_segments(file_path)
+        if not segments:
             return None
 
+        clauses = ['lower(id::text) = ANY(%s)']
+        params = [[segment.lower() for segment in segments]]
+
+        if self.has_storage_label:
+            clauses.append('"storageLabel" = ANY(%s)')
+            params.append(segments)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f'SELECT id, name, email FROM "{self.user_table}" '
+                f'WHERE {" OR ".join(clauses)} LIMIT 2',
+                params
+            ).fetchall()
+
+        # Two matches means the path is ambiguous, which is not worth guessing at.
+        if len(rows) != 1:
+            return None
+
+        row = rows[0]
         return {'id': str(row['id']), 'name': row['name'], 'email': row['email']}
 
-    def user_id_for_storage_label(self, label):
+    def _library_segments(self, file_path):
         """
-        Resolve a storage label, which appears in library paths, to a user id.
+        Return the directory names to match a user against.
 
-        Returns:
-            str or None
+        Only directories inside the mapped library are considered, so a mount
+        point that happens to share a name with someone's storage label cannot
+        be mistaken for it. The file name itself is never a candidate.
         """
-        self._require_schema()
+        path_str = str(Path(file_path))
 
-        if not self.has_storage_label:
-            return None
+        for local_prefix, _ in self.path_map:
+            if path_str.startswith(local_prefix):
+                relative = Path(path_str[len(local_prefix):].lstrip('/'))
+                return [part for part in relative.parts[:-1]]
 
-        with self._connect() as conn:
-            row = conn.execute(
-                f'SELECT id FROM "{self.user_table}" WHERE "storageLabel" = %s', (label,)
-            ).fetchone()
-
-        return str(row['id']) if row else None
+        return [part for part in Path(path_str).parts[:-1] if part != '/']
 
     def trash_days(self):
         """

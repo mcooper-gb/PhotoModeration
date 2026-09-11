@@ -85,6 +85,8 @@ Manages application configuration from environment variables. Validates required
   needs before allowing any write
 - Resolves assets and uploaders by original path, checksum, then filename, refusing an
   ambiguous filename match
+- Identifies the uploader from the library path in a single query when no asset row
+  matches, comparing the directory names against user ids and storage labels at once
 - Reads Immich's configured trash retention when the settings table is readable
 - Writes only `status` and `deletedAt`, the same columns Immich's own delete sets, and
   leaves file, thumbnail and row cleanup to Immich's background jobs
