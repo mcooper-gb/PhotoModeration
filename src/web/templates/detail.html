@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ item.file_name }}{% endblock %}
+
+{% block content %}
+<p><a class="back" href="{{ url_for('index') }}">&larr; Back to queue</a></p>
+
+<h1>{{ item.file_name }}</h1>
+<p class="meta"><span class="badge badge-{{ item.status }}">{{ status_labels[item.status] }}</span></p>
+
+<div class="detail">
+    <div class="viewer">
+        {% if reveal %}
+            {% if original_available %}
+                <img class="full" src="{{ url_for('original', item_id=item.id) }}"
+                     alt="Original of {{ item.file_name }}">
+                <p class="warning">Showing the unredacted original.</p>
+            {% else %}
+                <p class="meta">
+                    The original is no longer available. The source file is gone from the
+                    scanned library{% if item.immich_asset_id %} and Immich could not supply it{% endif %}.
+                </p>
+            {% endif %}
+            <a class="button" href="{{ url_for('detail', item_id=item.id) }}">Show redacted</a>
+        {% else %}
+            <img class="full" src="{{ url_for('preview', item_id=item.id) }}"
+                 alt="Redacted preview of {{ item.file_name }}">
+            <p class="meta">Redacted view (default).</p>
+            {% if allow_reveal %}
+                <a class="button button-warn" href="{{ url_for('detail', item_id=item.id, reveal=1) }}"
+                   rel="nofollow">Reveal original</a>
+            {% else %}
+                <p class="meta">Revealing originals is disabled.</p>
+            {% endif %}
+        {% endif %}
+
+        {% if item.immich_link %}
+            <p>
+                <a class="button button-secondary" href="{{ item.immich_link }}" target="_blank" rel="noopener">
+                    Open in Immich
+                </a>
+            </p>
+            <p class="warning">Immich always shows the original, unredacted asset.</p>
+        {% endif %}
+    </div>
+
+    <div class="facts">
+        <h2>Detection</h2>
+        <dl>
+            <dt>Path</dt><dd class="mono">{{ item.original_path }}</dd>
+            <dt>Type</dt><dd>{{ item.media_type }}</dd>
+            {% if item.frame_number is not none %}
+                <dt>Frame</dt>
+                <dd>{{ item.frame_number }}{% if item.frame_timestamp %} (t={{ '%.1f'|format(item.frame_timestamp) }}s){% endif %}</dd>
+            {% endif %}
+            <dt>Labels</dt>
+            <dd class="labels">{% for label in item.labels %}<span class="label">{{ label }}</span>{% endfor %}</dd>
+            <dt>Top score</dt><dd>{{ (item.max_score * 100)|round|int }}%</dd>
+            <dt>Flagged</dt><dd>{{ item.detected_at[:19].replace('T', ' ') }}</dd>
+            {% if item.reviewed_at %}<dt>Reviewed</dt><dd>{{ item.reviewed_at[:19].replace('T', ' ') }}</dd>{% endif %}
+            {% if item.status_detail %}<dt>Outcome</dt><dd>{{ item.status_detail }}</dd>{% endif %}
+        </dl>
+
+        <h2>Uploader</h2>
+        <dl>
+            <dt>Name</dt><dd>{{ item.owner_name or 'Unknown' }}</dd>
+            <dt>Email</dt>
+            <dd>
+                {% if item.owner_email %}
+                    <a href="mailto:{{ item.owner_email }}">{{ item.owner_email }}</a>
+                {% else %}Unknown{% endif %}
+            </dd>
+            <dt>Immich user id</dt><dd class="mono">{{ item.immich_owner_id or 'Unknown' }}</dd>
+            <dt>Immich asset id</dt><dd class="mono">{{ item.immich_asset_id or 'Not matched' }}</dd>
+            {% if item.resolved_by %}<dt>Matched by</dt><dd>{{ item.resolved_by }}</dd>{% endif %}
+            <dt>Owner notified</dt><dd>{{ 'Yes' if item.owner_notified else 'No' }}</dd>
+        </dl>
+
+        <h2>Actions</h2>
+        <form class="actions" method="post" action="{{ url_for('action', item_id=item.id) }}">
+            <button class="button" type="submit" name="action" value="keep">Keep (mark reviewed)</button>
+
+            {% if immich_enabled and item.immich_asset_id %}
+                <fieldset>
+                    <legend>Delete from Immich</legend>
+                    <label>
+                        <input type="radio" name="mode" value="trash" {{ 'checked' if delete_mode != 'permanent' }}>
+                        Move to Immich trash (recoverable)
+                    </label>
+                    <label>
+                        <input type="radio" name="mode" value="permanent" {{ 'checked' if delete_mode == 'permanent' }}>
+                        Delete permanently
+                    </label>
+                    <label class="notify {{ 'disabled' if not can_notify }}">
+                        <input type="checkbox" name="notify" {{ 'checked' if notify_default and can_notify }}
+                               {{ 'disabled' if not can_notify }}>
+                        Notify the uploader by email
+                        {% if notify_blocked %}<span class="meta">({{ notify_blocked }})</span>{% endif %}
+                    </label>
+                    <label>
+                        Note to the uploader (optional)
+                        <textarea name="note" rows="2" placeholder="Optional message included in the email"></textarea>
+                    </label>
+                    <button class="button button-danger" type="submit" name="action" value="delete"
+                            onclick="return confirm('Delete this asset from Immich?')">Delete asset</button>
+                </fieldset>
+
+                {% if item.status == 'deleted' %}
+                    <button class="button button-secondary" type="submit" name="action" value="restore">
+                        Restore from trash
+                    </button>
+                {% endif %}
+            {% elif immich_enabled %}
+                <p class="meta">This file is not linked to an Immich asset, so it cannot be deleted from here.</p>
+            {% else %}
+                <p class="meta">Immich is not configured, so deletion is unavailable.</p>
+            {% endif %}
+        </form>
+    </div>
+</div>
+{% endblock %}

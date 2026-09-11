@@ -1,7 +1,17 @@
+import json
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _as_bool(value, default=False):
+    """Parse a truthy environment variable value."""
+    if value is None:
+        return default
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 class Config:
@@ -26,6 +36,96 @@ class Config:
     VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv'}
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
 
+    # --- Redaction -------------------------------------------------------
+    # blur (default), pixelate or box (the original black rectangle).
+    REDACTION_MODE = os.getenv('REDACTION_MODE', 'blur').strip().lower()
+    REDACTION_STRENGTH = int(os.getenv('REDACTION_STRENGTH', 60))
+    REDACTION_PADDING = int(os.getenv('REDACTION_PADDING', 8))
+
+    # --- Immich integration ----------------------------------------------
+    IMMICH_URL = (os.getenv('IMMICH_URL') or '').rstrip('/')
+    # Public URL used for links in emails / the dashboard. Defaults to IMMICH_URL.
+    IMMICH_EXTERNAL_URL = (os.getenv('IMMICH_EXTERNAL_URL') or IMMICH_URL).rstrip('/')
+    IMMICH_API_KEY = os.getenv('IMMICH_API_KEY')
+    # Optional JSON file mapping user id or email -> API key, used so assets
+    # owned by other users can be deleted (Immich API keys are per-user).
+    IMMICH_API_KEYS_FILE = os.getenv('IMMICH_API_KEYS_FILE')
+    IMMICH_TIMEOUT = int(os.getenv('IMMICH_TIMEOUT', 15))
+    IMMICH_VERIFY_SSL = _as_bool(os.getenv('IMMICH_VERIFY_SSL'), True)
+    # Maps the locally mounted paths onto the paths Immich stores internally,
+    # e.g. "/data/scan:upload/library" (comma separated for multiple mounts).
+    IMMICH_PATH_MAP = os.getenv('IMMICH_PATH_MAP', '')
+    # trash (recoverable, default) or permanent.
+    IMMICH_DELETE_MODE = os.getenv('IMMICH_DELETE_MODE', 'trash').strip().lower()
+    # Pre-tick the "notify owner" checkbox in the dashboard.
+    IMMICH_NOTIFY_OWNER_DEFAULT = _as_bool(os.getenv('IMMICH_NOTIFY_OWNER_DEFAULT'), False)
+
+    # --- Moderation dashboard --------------------------------------------
+    DASHBOARD_ENABLED = _as_bool(os.getenv('DASHBOARD_ENABLED'), True)
+    DASHBOARD_HOST = os.getenv('DASHBOARD_HOST', '0.0.0.0')
+    DASHBOARD_PORT = int(os.getenv('DASHBOARD_PORT', 8080))
+    # Base URL used when linking to the dashboard from emails.
+    DASHBOARD_URL = (os.getenv('DASHBOARD_URL') or f"http://localhost:{DASHBOARD_PORT}").rstrip('/')
+    DASHBOARD_USER = os.getenv('DASHBOARD_USER')
+    DASHBOARD_PASS = os.getenv('DASHBOARD_PASS')
+    # Allow moderators to reveal the unredacted original from the dashboard.
+    DASHBOARD_ALLOW_REVEAL = _as_bool(os.getenv('DASHBOARD_ALLOW_REVEAL'), True)
+    DASHBOARD_PAGE_SIZE = int(os.getenv('DASHBOARD_PAGE_SIZE', 24))
+
+    # Review queue backing the dashboard.
+    REVIEW_DIR = os.getenv('REVIEW_DIR', 'review_images')
+    REVIEW_DB_PATH = os.getenv('REVIEW_DB_PATH', 'review_queue.db')
+    # Resolved items older than this are purged on startup (0 disables).
+    REVIEW_RETENTION_DAYS = int(os.getenv('REVIEW_RETENTION_DAYS', 30))
+
+    @classmethod
+    def immich_enabled(cls):
+        """Immich integration is active when a URL and API key are configured."""
+        return bool(cls.IMMICH_URL and cls.IMMICH_API_KEY)
+
+    @classmethod
+    def path_map(cls):
+        """
+        Parse IMMICH_PATH_MAP into a list of (local_prefix, immich_prefix) pairs.
+
+        Returns:
+            list[tuple[str, str]]: Longest local prefix first.
+        """
+        pairs = []
+        for entry in cls.IMMICH_PATH_MAP.split(','):
+            entry = entry.strip()
+            if not entry or ':' not in entry:
+                continue
+            local, remote = entry.split(':', 1)
+            local = local.strip().rstrip('/')
+            remote = remote.strip().rstrip('/')
+            if local and remote:
+                pairs.append((local, remote))
+        return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
+    @classmethod
+    def user_api_keys(cls):
+        """
+        Load the optional per-user Immich API key map.
+
+        Returns:
+            dict: Mapping of lowercase user id or email to API key.
+        """
+        if not cls.IMMICH_API_KEYS_FILE:
+            return {}
+
+        path = Path(cls.IMMICH_API_KEYS_FILE)
+        if not path.exists():
+            print(f"Immich API key file not found: {path}")
+            return {}
+
+        try:
+            with open(path) as handle:
+                data = json.load(handle)
+            return {str(key).lower(): value for key, value in data.items()}
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Failed to read Immich API key file {path}: {e}")
+            return {}
 
     @classmethod
     def validate(cls):
@@ -33,3 +133,12 @@ class Config:
         missing = [field for field in required if not getattr(cls, field)]
         if missing:
             raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
+        if cls.REDACTION_MODE not in ('blur', 'pixelate', 'box'):
+            raise ValueError(f"REDACTION_MODE must be blur, pixelate or box (got '{cls.REDACTION_MODE}')")
+
+        if cls.IMMICH_DELETE_MODE not in ('trash', 'permanent'):
+            raise ValueError(f"IMMICH_DELETE_MODE must be trash or permanent (got '{cls.IMMICH_DELETE_MODE}')")
+
+        if cls.IMMICH_URL and not cls.IMMICH_API_KEY:
+            raise ValueError("IMMICH_URL is set but IMMICH_API_KEY is missing")

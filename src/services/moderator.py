@@ -1,20 +1,28 @@
-import cv2
+import hashlib
 import tempfile
 from pathlib import Path
+
+import cv2
 from nudenet import NudeDetector
 
+from src.utils.redaction import explicit_boxes, redact_frame
 
 
 class Moderator:
 
-    def __init__(self, explicit_labels, image_extensions,video_extensions, censored_dir, confidence_threshold=0.6):
+    def __init__(self, explicit_labels, image_extensions, video_extensions, censored_dir,
+                 confidence_threshold=0.6, redaction_mode='blur', redaction_strength=60,
+                 redaction_padding=8):
         self.detector = NudeDetector()
         self.explicit_labels = explicit_labels
         self.image_extensions = image_extensions
         self.video_extensions = video_extensions
         self.censored_dir = Path(censored_dir)
-        self.censored_dir.mkdir(exist_ok=True)
+        self.censored_dir.mkdir(parents=True, exist_ok=True)
         self.confidence_threshold = confidence_threshold
+        self.redaction_mode = redaction_mode
+        self.redaction_strength = redaction_strength
+        self.redaction_padding = redaction_padding
 
     def is_video(self, file_path):
         return Path(file_path).suffix.lower() in self.video_extensions
@@ -138,7 +146,17 @@ class Moderator:
 
                     if has_explicit:
                         detection_count += 1
-                        detections[frame_count] = frame_detections
+                        # Detections are made against the (possibly downscaled) frame,
+                        # so keep the scale factor for redacting the full-size frame.
+                        # Detection runs on a downscaled frame (codec-level or
+                        # manual), so boxes are scaled back to the original
+                        # resolution that _censor_video reads frames at.
+                        detect_height, detect_width = frame_for_detection.shape[:2]
+                        detections[frame_count] = self._rescale_detections(
+                            frame_detections,
+                            original_width / detect_width if detect_width else 1.0,
+                            original_height / detect_height if detect_height else 1.0
+                        )
                         print(f"  Detection {detection_count}/5 at frame {frame_count} (t={timestamp:.1f}s)")
                         in_explicit_scene = True
                 finally:
@@ -150,24 +168,70 @@ class Moderator:
         print(f"Video processing complete: {detection_count} explicit frames found")
         return detections
 
+    @staticmethod
+    def _rescale_detections(detections, x_scale, y_scale):
+        """Scale detection boxes back to the original frame dimensions."""
+        if x_scale == 1.0 and y_scale == 1.0:
+            return detections
+
+        rescaled = []
+        for det in detections:
+            box = det.get('box')
+            if box and len(box) >= 4:
+                det = dict(det)
+                det['box'] = [
+                    box[0] * x_scale,
+                    box[1] * y_scale,
+                    box[2] * x_scale,
+                    box[3] * y_scale,
+                ]
+            rescaled.append(det)
+
+        return rescaled
+
     def censor(self, file_path, detections=None):
-        """Censor explicit content using NudeNet's built-in censoring."""
+        """
+        Redact explicit content by blurring (or pixelating) the detected regions.
+
+        Args:
+            file_path: Path to the media file
+            detections: Detection data from detect()
+
+        Returns:
+            Path for images, or a list of frame dicts for videos, or None
+        """
         if self.is_video(file_path):
             return self._censor_video(file_path, detections)
 
-        output_path = self.censored_dir / f"censored_{Path(file_path).name}"
+        if detections is None:
+            detections = self.detect(file_path)
 
-        print(f"\n=== Censoring {Path(file_path).name} ===")
-        censored_path = self.detector.censor(
-            str(file_path),
-            classes=list(self.explicit_labels),
-            output_path=str(output_path)
-        )
+        image = cv2.imread(str(file_path))
+        if image is None:
+            print(f"  Unable to read image for redaction: {file_path}")
+            return None
 
-        return Path(censored_path) if censored_path else None
+        boxes = explicit_boxes(detections, self.explicit_labels, self.confidence_threshold)
+        if not boxes:
+            return None
+
+        print(f"\n=== Redacting {Path(file_path).name} ({self.redaction_mode}, {len(boxes)} region(s)) ===")
+        redact_frame(image, boxes, self.redaction_mode, self.redaction_strength, self.redaction_padding)
+
+        output_path = self.censored_dir / self._output_name(file_path)
+        if not cv2.imwrite(str(output_path), image):
+            print(f"  Failed to write redacted image: {output_path}")
+            return None
+
+        return output_path
 
     def _censor_video(self, video_path, detections):
-        """Censor detected frames in video and save as individual images."""
+        """
+        Redact detected frames in a video and save them as individual images.
+
+        Returns:
+            list[dict]: Entries with 'path', 'frame_number' and 'timestamp'
+        """
         if not detections:
             return []
 
@@ -175,10 +239,10 @@ class Moderator:
         if not cap.isOpened():
             return []
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 1.0
         censored_frames = []
 
-        print(f"\n=== Censoring {len(detections)} frames from {Path(video_path).name} ===")
+        print(f"\n=== Redacting {len(detections)} frames from {Path(video_path).name} ===")
 
         for frame_num in sorted(detections.keys()):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
@@ -188,30 +252,57 @@ class Moderator:
                 continue
 
             timestamp = frame_num / fps
+            boxes = explicit_boxes(detections[frame_num], self.explicit_labels, self.confidence_threshold)
+            if not boxes:
+                continue
 
-            # Save frame temporarily
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                tmp_path = tmp.name
-                cv2.imwrite(tmp_path, frame)
+            redact_frame(frame, boxes, self.redaction_mode, self.redaction_strength, self.redaction_padding)
 
-            try:
-                # Use NudeNet to censor the frame
-                video_stem = Path(video_path).stem
-                output_filename = f"censored_{video_stem}_t{timestamp:.2f}s_f{frame_num}.jpg"
-                output_path = self.censored_dir / output_filename
+            output_path = self.censored_dir / self._output_name(video_path, frame_num)
+            if not cv2.imwrite(str(output_path), frame):
+                print(f"  Failed to write redacted frame {frame_num}")
+                continue
 
-                censored_path = self.detector.censor(
-                    tmp_path,
-                    classes=list(self.explicit_labels),
-                    output_path=str(output_path)
-                )
-
-                if censored_path:
-                    censored_frames.append(Path(censored_path))
-                    print(f"  Censored frame {frame_num} (t={timestamp:.1f}s) -> {output_filename}")
-            finally:
-                Path(tmp_path).unlink()
+            censored_frames.append({
+                'path': output_path,
+                'frame_number': frame_num,
+                'timestamp': timestamp,
+            })
+            print(f"  Redacted frame {frame_num} (t={timestamp:.1f}s) -> {output_path.name}")
 
         cap.release()
-        print(f"Censored {len(censored_frames)} frames")
+        print(f"Redacted {len(censored_frames)} frames")
         return censored_frames
+
+    @staticmethod
+    def extract_frame(video_path, frame_number):
+        """
+        Read a single frame from a video.
+
+        Args:
+            video_path: Path to the video file
+            frame_number: Zero-based frame index
+
+        Returns:
+            OpenCV image array, or None if the frame could not be read
+        """
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            return None
+
+        try:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(frame_number)))
+            ret, frame = cap.read()
+            return frame if ret else None
+        finally:
+            cap.release()
+
+    @staticmethod
+    def _output_name(source_path, frame_number=None):
+        """Build a collision-free output filename for a redacted preview."""
+        source_path = Path(source_path)
+        digest = hashlib.sha1(str(source_path).encode('utf-8')).hexdigest()[:8]
+
+        if frame_number is None:
+            return f"redacted_{source_path.stem}_{digest}.jpg"
+        return f"redacted_{source_path.stem}_{digest}_f{frame_number}.jpg"

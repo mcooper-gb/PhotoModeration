@@ -12,21 +12,28 @@ class MediaFileHandler(FileSystemEventHandler):
     """Handles file system events for image and video files."""
 
 
-    def __init__(self, scanner, moderator, notifier, batch_size=10, batch_timeout=60):
+    def __init__(self, scanner, moderator, notifier, batch_size=10, batch_timeout=60,
+                 immich=None, review_store=None, dashboard_url=None):
         """
         Initialize the file handler.
 
         Args:
             scanner: Scanner instance for tracking processed files
-            moderator: Moderator instance for detection and censoring
+            moderator: Moderator instance for detection and redaction
             notifier: Notifier instance for sending alerts
             batch_size: Number of detections before sending notification batch
             batch_timeout: Seconds to wait before sending incomplete batch (0 to disable)
+            immich: Optional ImmichClient for asset and owner lookup
+            review_store: Optional ReviewStore for the moderation dashboard
+            dashboard_url: Optional dashboard base URL used in review links
         """
         self.scanner = scanner
         self.moderator = moderator
         self.batch_manager = BatchManager(notifier, batch_size, batch_timeout)
         self.supported_extensions = moderator.image_extensions | moderator.video_extensions
+        self.immich = immich
+        self.review_store = review_store
+        self.dashboard_url = dashboard_url
 
     def on_created(self, event):
         """Called when a file or directory is created."""
@@ -58,7 +65,10 @@ class MediaFileHandler(FileSystemEventHandler):
         """Process a single file for explicit content."""
         try:
             batch = []
-            process_media_file(file_path, self.moderator, self.scanner, batch)
+            process_media_file(
+                file_path, self.moderator, self.scanner, batch,
+                self.immich, self.review_store, self.dashboard_url
+            )
 
             for item in batch:
                 self.batch_manager.add(item)
@@ -70,20 +80,27 @@ class MediaFileHandler(FileSystemEventHandler):
 class MediaWatcher:
     """Watches a directory for new media files and processes them."""
 
-    def __init__(self, directory, scanner, moderator, notifier, batch_size=10, batch_timeout=60):
+    def __init__(self, directory, scanner, moderator, notifier, batch_size=10, batch_timeout=60,
+                 immich=None, review_store=None, dashboard_url=None):
         """
         Initialize the watcher.
 
         Args:
             directory: Directory path to watch
             scanner: Scanner instance for tracking processed files
-            moderator: Moderator instance for detection and censoring
+            moderator: Moderator instance for detection and redaction
             notifier: Notifier instance for sending alerts
             batch_size: Number of detections before sending notification batch
             batch_timeout: Seconds to wait before sending incomplete batch (0 to disable)
+            immich: Optional ImmichClient for asset and owner lookup
+            review_store: Optional ReviewStore for the moderation dashboard
+            dashboard_url: Optional dashboard base URL used in review links
         """
         self.directory = Path(directory)
-        self.event_handler = MediaFileHandler(scanner, moderator, notifier, batch_size, batch_timeout)
+        self.event_handler = MediaFileHandler(
+            scanner, moderator, notifier, batch_size, batch_timeout,
+            immich, review_store, dashboard_url
+        )
         self.observer = Observer()
 
     def start(self):
