@@ -146,11 +146,7 @@ class Moderator:
 
                     if has_explicit:
                         detection_count += 1
-                        # Detections are made against the (possibly downscaled) frame,
-                        # so keep the scale factor for redacting the full-size frame.
-                        # Detection runs on a downscaled frame (codec-level or
-                        # manual), so boxes are scaled back to the original
-                        # resolution that _censor_video reads frames at.
+                        # _censor_video re-reads frames at full resolution.
                         detect_height, detect_width = frame_for_detection.shape[:2]
                         detections[frame_count] = self._rescale_detections(
                             frame_detections,

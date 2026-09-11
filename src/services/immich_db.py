@@ -30,7 +30,7 @@ REQUIRED_ASSET_COLUMNS = {'id', 'ownerId', 'originalPath', 'originalFileName', '
                           'status', 'deletedAt'}
 REQUIRED_USER_COLUMNS = {'id', 'name', 'email'}
 
-# Immich stores overrides of its own settings here; reading it is optional.
+# Only non-default settings are stored here, and the role may not be able to read it.
 CONFIG_TABLE = 'system_metadata'
 CONFIG_KEY = 'system-config'
 DEFAULT_TRASH_DAYS = 30
@@ -60,8 +60,6 @@ class ImmichDatabase:
         self.has_storage_label = False
         self.lock = threading.Lock()
         self._trash_days = None
-
-    # --- Connection and schema ------------------------------------------
 
     def _connect(self):
         return psycopg.connect(self.dsn, connect_timeout=self.connect_timeout, row_factory=dict_row)
@@ -128,8 +126,6 @@ class ImmichDatabase:
         if not self.available:
             raise ImmichDatabaseError("the Immich database schema has not been verified")
 
-    # --- Lookups ---------------------------------------------------------
-
     def resolve_asset(self, file_path):
         """
         Find the Immich asset for a file on disk, along with its owner.
@@ -167,7 +163,7 @@ class ImmichDatabase:
                     params
                 ).fetchall()
 
-                # An ambiguous filename match is not good enough to act on.
+                # Too risky to act on the wrong user's asset.
                 if len(rows) != 1:
                     continue
 
@@ -219,7 +215,7 @@ class ImmichDatabase:
                 params
             ).fetchall()
 
-        # Two matches means the path is ambiguous, which is not worth guessing at.
+        # Two matches means the path is ambiguous.
         if len(rows) != 1:
             return None
 
@@ -292,8 +288,6 @@ class ImmichDatabase:
                 suffix = path_str[len(local_prefix):].lstrip('/')
                 return f"{immich_prefix}/{suffix}"
         return None
-
-    # --- Moderation actions ----------------------------------------------
 
     def trash_asset(self, asset_id):
         """

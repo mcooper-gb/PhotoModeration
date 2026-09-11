@@ -41,7 +41,7 @@ class Config:
     REDACTION_PADDING = int(os.getenv('REDACTION_PADDING', 8))
 
     # --- Immich integration ----------------------------------------------
-    # Public Immich URL, used for links in emails and the dashboard.
+    # Reachable by the moderator's browser, unlike the internal hostname.
     IMMICH_EXTERNAL_URL = (os.getenv('IMMICH_EXTERNAL_URL') or '').rstrip('/')
     # Maps the locally mounted paths onto the paths Immich stores internally,
     # e.g. "/data/scan:upload/library" (comma separated for multiple mounts).
@@ -67,15 +67,13 @@ class Config:
     DASHBOARD_ENABLED = _as_bool(os.getenv('DASHBOARD_ENABLED'), True)
     DASHBOARD_HOST = os.getenv('DASHBOARD_HOST', '0.0.0.0')
     DASHBOARD_PORT = int(os.getenv('DASHBOARD_PORT', 8080))
-    # Base URL used when linking to the dashboard from emails.
+    # How the dashboard is reached from outside, for links in emails.
     DASHBOARD_URL = (os.getenv('DASHBOARD_URL') or f"http://localhost:{DASHBOARD_PORT}").rstrip('/')
     DASHBOARD_USER = os.getenv('DASHBOARD_USER')
     DASHBOARD_PASS = os.getenv('DASHBOARD_PASS')
-    # Allow moderators to reveal the unredacted original from the dashboard.
     DASHBOARD_ALLOW_REVEAL = _as_bool(os.getenv('DASHBOARD_ALLOW_REVEAL'), True)
     DASHBOARD_PAGE_SIZE = int(os.getenv('DASHBOARD_PAGE_SIZE', 24))
 
-    # Review queue backing the dashboard.
     REVIEW_DIR = os.getenv('REVIEW_DIR', 'review_images')
     REVIEW_DB_PATH = os.getenv('REVIEW_DB_PATH', 'review_queue.db')
     # Resolved items older than this are purged on startup (0 disables).

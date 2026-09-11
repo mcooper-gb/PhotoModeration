@@ -30,8 +30,6 @@ class Immich:
         """Whether the Immich database is usable."""
         return bool(self.database and self.database.available)
 
-    # --- Asset resolution ------------------------------------------------
-
     def resolve_asset(self, file_path):
         """
         Find the Immich asset for a file on disk, along with its uploader.
@@ -69,9 +67,8 @@ class Immich:
             })
             return context
 
-        # The asset row was not found, but Immich's default storage template
-        # puts the owner's user id or storage label in the path, so the
-        # moderator can still be told whose upload this is.
+        # Immich's storage template names the directory after the owner, so
+        # the uploader is identifiable even with no asset row.
         owner = self._safely(lambda: self.database.find_user_for_path(file_path),
                              f"uploader lookup for {file_path.name}")
         if owner:
@@ -89,8 +86,6 @@ class Immich:
         if not asset_id or not self.external_url:
             return None
         return f"{self.external_url}/photos/{asset_id}"
-
-    # --- Moderation actions ----------------------------------------------
 
     def delete_asset(self, asset_id, permanent=None):
         """

@@ -60,8 +60,6 @@ class Dashboard:
         self.app.secret_key = os.getenv('DASHBOARD_SECRET_KEY') or secrets.token_hex(16)
         self._register_routes()
 
-    # --- Auth ------------------------------------------------------------
-
     def _auth_required(self, view):
         """Wrap a view with optional HTTP basic auth."""
 
@@ -81,8 +79,6 @@ class Dashboard:
             )
 
         return wrapper
-
-    # --- Routes ----------------------------------------------------------
 
     def _register_routes(self):
         app = self.app
@@ -127,7 +123,6 @@ class Dashboard:
         if not item:
             abort(404)
 
-        # Redacted by default; the original is only shown when asked for.
         reveal = self.allow_reveal and request.args.get('reveal') == '1'
 
         can_notify = bool(self.notifier and item.get('owner_email'))
@@ -229,8 +224,6 @@ class Dashboard:
         """Liveness endpoint for container health checks."""
         return {'status': 'ok', 'queue': self.review_store.counts()}
 
-    # --- Decisions -------------------------------------------------------
-
     def _delete(self, item, notify, note, mode=None):
         """Delete the asset through Immich and optionally notify its owner."""
         item_id = item['id']
@@ -266,8 +259,7 @@ class Dashboard:
             else:
                 detail = f"{detail}. Owner not notified: email is not configured"
 
-        # A permanently deleted asset leaves nothing to restore, so the local
-        # redacted copy goes too; trashed assets keep theirs for restores.
+        # A trashed asset can still be restored, so it keeps its preview.
         self.review_store.set_status(
             item_id, STATUS_DELETED, detail,
             owner_notified=notified, drop_preview=permanent
@@ -309,8 +301,6 @@ class Dashboard:
 
         success, buffer = cv2.imencode('.jpg', frame)
         return buffer.tobytes() if success else None
-
-    # --- Lifecycle -------------------------------------------------------
 
     def run(self):
         """Run the dashboard (blocking), preferring a production WSGI server."""

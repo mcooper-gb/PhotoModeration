@@ -93,8 +93,8 @@ def _blur(region, strength):
     """Apply a Gaussian blur scaled to the region size and strength."""
     height, width = region.shape[:2]
 
-    # Kernel is a fraction of the shortest edge so small and large regions
-    # end up equally unreadable. Must be odd and at least 3 pixels.
+    # Proportional to the region so small and large ones blur equally hard.
+    # GaussianBlur requires an odd kernel.
     kernel_size = max(3, int(min(height, width) * (strength / 100.0) * 0.6))
     if kernel_size % 2 == 0:
         kernel_size += 1
@@ -102,8 +102,7 @@ def _blur(region, strength):
     sigma = max(1.0, kernel_size / 3.0)
     blurred = cv2.GaussianBlur(region, (kernel_size, kernel_size), sigma)
 
-    # A second pass removes the ghosting that can survive a single blur of a
-    # high-contrast region.
+    # One pass can leave a ghost of a high-contrast region.
     if strength >= 50:
         blurred = cv2.GaussianBlur(blurred, (kernel_size, kernel_size), sigma)
 

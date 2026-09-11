@@ -70,9 +70,8 @@ class Notifier:
         html_content = EmailTemplate.generate_html(enriched_results, self.dashboard_url)
         msg.attach(MIMEText(html_content, 'html'))
 
-        # Attach redacted previews with Content-ID for inline display. The
-        # subtype is stated rather than guessed so a truncated preview cannot
-        # take down the whole batch notification.
+        # MIMEImage guesses the subtype from the bytes and raises on a
+        # truncated preview, which would lose the whole batch notification.
         for idx, res in enumerate(enriched_results, 1):
             censored_path = res['censored_path']
             if censored_path and Path(censored_path).exists():
