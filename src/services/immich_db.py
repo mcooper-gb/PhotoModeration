@@ -29,6 +29,11 @@ REQUIRED_ASSET_COLUMNS = {'id', 'ownerId', 'originalPath', 'originalFileName', '
                           'status', 'deletedAt'}
 REQUIRED_USER_COLUMNS = {'id', 'name', 'email'}
 
+# Immich stores overrides of its own settings here; reading it is optional.
+CONFIG_TABLE = 'system_metadata'
+CONFIG_KEY = 'system-config'
+DEFAULT_TRASH_DAYS = 30
+
 
 class ImmichDatabaseError(Exception):
     """Raised when the Immich database cannot be used."""
@@ -51,7 +56,9 @@ class ImmichDatabase:
         self.connect_timeout = connect_timeout
         self.asset_table = None
         self.user_table = None
+        self.has_storage_label = False
         self.lock = threading.Lock()
+        self._trash_days = None
 
     # --- Connection and schema ------------------------------------------
 
@@ -69,6 +76,7 @@ class ImmichDatabase:
             with self._connect() as conn:
                 self.asset_table = self._detect_table(conn, ASSET_TABLES, REQUIRED_ASSET_COLUMNS)
                 self.user_table = self._detect_table(conn, USER_TABLES, REQUIRED_USER_COLUMNS)
+                self.has_storage_label = self._has_column(conn, self.user_table, 'storageLabel')
         except (psycopg.Error, ImmichDatabaseError) as e:
             print(f"Immich database unavailable: {e}")
             self.asset_table = self.user_table = None
@@ -104,6 +112,16 @@ class ImmichDatabase:
             return table
 
         raise ImmichDatabaseError(f"none of these tables exist: {', '.join(candidates)}")
+
+    @staticmethod
+    def _has_column(conn, table, column):
+        """Check for a column this service can use but does not require."""
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = %s AND column_name = %s",
+            (table, column)
+        ).fetchone()
+        return row is not None
 
     def _require_schema(self):
         if not self.available:
@@ -163,6 +181,74 @@ class ImmichDatabase:
                 }
 
         return None
+
+    def get_user(self, user_id):
+        """
+        Look up a user by id.
+
+        Returns:
+            dict or None: User with 'id', 'name' and 'email'
+        """
+        self._require_schema()
+
+        with self._connect() as conn:
+            row = conn.execute(
+                f'SELECT id, name, email FROM "{self.user_table}" WHERE id = %s', (user_id,)
+            ).fetchone()
+
+        if not row:
+            return None
+
+        return {'id': str(row['id']), 'name': row['name'], 'email': row['email']}
+
+    def user_id_for_storage_label(self, label):
+        """
+        Resolve a storage label, which appears in library paths, to a user id.
+
+        Returns:
+            str or None
+        """
+        self._require_schema()
+
+        if not self.has_storage_label:
+            return None
+
+        with self._connect() as conn:
+            row = conn.execute(
+                f'SELECT id FROM "{self.user_table}" WHERE "storageLabel" = %s', (label,)
+            ).fetchone()
+
+        return str(row['id']) if row else None
+
+    def trash_days(self):
+        """
+        Read Immich's configured trash retention.
+
+        Immich only stores settings that differ from its defaults, and the
+        table may not be readable by the moderation role, so this falls back
+        to Immich's own default.
+
+        Returns:
+            int: Retention in days
+        """
+        if self._trash_days is not None:
+            return self._trash_days
+
+        self._trash_days = DEFAULT_TRASH_DAYS
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    f'SELECT value FROM "{CONFIG_TABLE}" WHERE key = %s', (CONFIG_KEY,)
+                ).fetchone()
+
+            trash = ((row or {}).get('value') or {}).get('trash') or {}
+            if trash.get('days'):
+                self._trash_days = int(trash['days'])
+        except (psycopg.Error, AttributeError, TypeError, ValueError) as e:
+            print(f"Could not read Immich's trash retention, assuming "
+                  f"{DEFAULT_TRASH_DAYS} days: {e}")
+
+        return self._trash_days
 
     def get_asset_status(self, asset_id):
         """Return the current status of an asset, or None if it is gone."""

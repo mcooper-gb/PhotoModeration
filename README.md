@@ -19,16 +19,17 @@ does, so the Immich database and library stay consistent.
 
 ## Immich Integration
 
-### Admin moderation (recommended)
+### Admin moderation
 
-One admin moderates every user's uploads, and no user has to hand over an API key.
+One admin moderates every user's uploads. No user has to hand over an API key, and the
+service does not use the Immich API at all.
 
-This needs database access, because the Immich API cannot do it. Immich API keys are scoped
-to the user that created them: there is no admin permission for another user's asset (the
-API exposes `adminUser`, `adminSession` and `adminConfig` permissions, but nothing for
-assets), no `/admin/assets` endpoint, and no impersonation — `POST /sessions` and
-`POST /api-keys` both act only on the caller. An admin key gets `400`/`403` on anyone
-else's asset.
+It connects to Immich's database instead, because the API cannot do this job. Immich API
+keys are scoped to the user that created them: there is no admin permission for another
+user's asset (the API exposes `adminUser`, `adminSession` and `adminConfig` permissions,
+but nothing for assets), no `/admin/assets` endpoint, and no impersonation —
+`POST /sessions` and `POST /api-keys` both act only on the caller. An admin key gets
+`400`/`403` on anyone else's asset.
 
 ```dotenv
 IMMICH_DB_HOST=immich-postgres
@@ -52,6 +53,10 @@ GRANT CONNECT ON DATABASE immich TO photomod;
 GRANT USAGE ON SCHEMA public TO photomod;
 GRANT SELECT ON asset, "user" TO photomod;
 GRANT UPDATE (status, "deletedAt") ON asset TO photomod;
+
+-- Optional: lets the service read your configured trash retention instead of
+-- assuming Immich's 30 day default.
+GRANT SELECT ON system_metadata TO photomod;
 ```
 
 On Immich versions that still use the plural table names, use `assets` and `users` instead
@@ -76,41 +81,10 @@ This service never deletes a file from disk and never deletes a database row —
 stays with Immich's background jobs. The `updatedAt`/`updateId` trigger fires on the
 update, so clients pick the change up through normal sync.
 
-### API key (optional)
-
-An API key adds nothing for moderation, but if you set one the service will read Immich's
-configured trash retention and can fall back to API lookups when the database is not
-configured. In Immich: **Account Settings → API Keys → New API Key**, with:
-
-| Permission | Used for |
-|---|---|
-| `asset.read` | Asset details and metadata search |
-| `asset.upload` | Checksum lookup via the duplicate check endpoint |
-| `asset.view` | Preview fallback in the dashboard |
-| `asset.download` | Showing the original when a moderator reveals it |
-| `asset.delete` | Deleting the key owner's own assets |
-| `user.read` | Resolving the uploader's name and email |
-| `adminConfig.read` | Reading the trash retention |
-
-Without database access, deletion only works for assets owned by the key's own user. As a
-fallback you can supply a key per user, but this is no longer the recommended setup:
-
-```dotenv
-IMMICH_API_KEYS_FILE=/data/db/immich-keys.json
-```
-
-```json
-{
-  "user-uuid-or-email": "that-user's-api-key"
-}
-```
-
 ### How assets are matched
 
-With database access, each flagged file is matched on its original path, then its SHA1
-checksum, then its filename (a filename that matches more than one asset is rejected rather
-than guessed). Without it, the API equivalents are used: the asset UUID in the filename, a
-checksum lookup via `POST /api/assets/bulk-upload-check`, then `POST /api/search/metadata`.
+Each flagged file is matched on its original path, then its SHA1 checksum, then its
+filename. A filename matching more than one asset is rejected rather than guessed.
 
 If nothing matches, the uploader is still recovered from the library path, which contains
 the user id or storage label under Immich's default storage template.
@@ -133,6 +107,8 @@ Available on port 8080 by default.
 - **Restore from trash** for trashed items
 - Video detections show the redacted frame; the original frame is re-extracted from the
   source on demand, so unredacted stills are never written to disk
+- Originals are read from the scanned library, so revealing one stops working if the file
+  is removed or the mount goes away
 
 Protect it with HTTP basic auth — it can display explicit content:
 
@@ -218,16 +194,9 @@ Replace `build: .` with `image: mcoopergb/photo-moderation:latest` in `docker-co
 - `IMMICH_PATH_MAP` - `local:immich` path prefix pairs, comma separated
 - `IMMICH_DELETE_MODE` - `trash` (default, recoverable) or `permanent`
 - `IMMICH_NOTIFY_OWNER_DEFAULT` - Pre-tick the notify-uploader checkbox (default: false)
-- `IMMICH_URL` - Internal Immich URL, only needed for the optional API fallback
-- `IMMICH_API_KEY` - Immich API key (optional, see above)
-- `IMMICH_API_KEYS_FILE` - Optional JSON file of per-user API keys (fallback only)
-- `IMMICH_TIMEOUT` - API timeout in seconds (default: 15)
-- `IMMICH_VERIFY_SSL` - Verify TLS certificates (default: true)
 
-Immich integration stays off until either `IMMICH_DB_*` or `IMMICH_URL` plus
-`IMMICH_API_KEY` is set; without it the service still scans, blurs and emails, but cannot
-name the uploader or delete assets. Only the database settings give one admin control over
-every user's uploads.
+Immich integration stays off until `IMMICH_DB_*` is set; without it the service still
+scans, blurs and emails, but cannot name the uploader or delete assets.
 
 ### Dashboard
 

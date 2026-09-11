@@ -23,7 +23,7 @@ class MediaFileHandler(FileSystemEventHandler):
             notifier: Notifier instance for sending alerts
             batch_size: Number of detections before sending notification batch
             batch_timeout: Seconds to wait before sending incomplete batch (0 to disable)
-            immich: Optional ImmichClient for asset and owner lookup
+            immich: Optional Immich integration for asset and owner lookup
             review_store: Optional ReviewStore for the moderation dashboard
             dashboard_url: Optional dashboard base URL used in review links
         """
@@ -92,7 +92,7 @@ class MediaWatcher:
             notifier: Notifier instance for sending alerts
             batch_size: Number of detections before sending notification batch
             batch_timeout: Seconds to wait before sending incomplete batch (0 to disable)
-            immich: Optional ImmichClient for asset and owner lookup
+            immich: Optional Immich integration for asset and owner lookup
             review_store: Optional ReviewStore for the moderation dashboard
             dashboard_url: Optional dashboard base URL used in review links
         """

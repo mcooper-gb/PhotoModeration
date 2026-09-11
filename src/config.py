@@ -1,6 +1,4 @@
-import json
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -43,20 +41,15 @@ class Config:
     REDACTION_PADDING = int(os.getenv('REDACTION_PADDING', 8))
 
     # --- Immich integration ----------------------------------------------
-    IMMICH_URL = (os.getenv('IMMICH_URL') or '').rstrip('/')
-    # Public URL used for links in emails / the dashboard. Defaults to IMMICH_URL.
-    IMMICH_EXTERNAL_URL = (os.getenv('IMMICH_EXTERNAL_URL') or IMMICH_URL).rstrip('/')
-    IMMICH_API_KEY = os.getenv('IMMICH_API_KEY')
-    # Optional JSON file mapping user id or email -> API key, used so assets
-    # owned by other users can be deleted (Immich API keys are per-user).
-    IMMICH_API_KEYS_FILE = os.getenv('IMMICH_API_KEYS_FILE')
-    IMMICH_TIMEOUT = int(os.getenv('IMMICH_TIMEOUT', 15))
-    IMMICH_VERIFY_SSL = _as_bool(os.getenv('IMMICH_VERIFY_SSL'), True)
+    # Public Immich URL, used for links in emails and the dashboard.
+    IMMICH_EXTERNAL_URL = (os.getenv('IMMICH_EXTERNAL_URL') or '').rstrip('/')
     # Maps the locally mounted paths onto the paths Immich stores internally,
     # e.g. "/data/scan:upload/library" (comma separated for multiple mounts).
     IMMICH_PATH_MAP = os.getenv('IMMICH_PATH_MAP', '')
-    # Immich database, which is what lets one admin moderate every user's
-    # assets: Immich API keys only ever cover the user that created them.
+
+    # Immich database. This is the whole integration: Immich API keys only ever
+    # cover the user that created them, so the API cannot moderate a shared
+    # library at all.
     IMMICH_DB_URL = os.getenv('IMMICH_DB_URL')
     IMMICH_DB_HOST = os.getenv('IMMICH_DB_HOST')
     IMMICH_DB_PORT = int(os.getenv('IMMICH_DB_PORT', 5432))
@@ -89,19 +82,9 @@ class Config:
     REVIEW_RETENTION_DAYS = int(os.getenv('REVIEW_RETENTION_DAYS', 30))
 
     @classmethod
-    def immich_api_enabled(cls):
-        """The Immich API is usable when a URL and API key are configured."""
-        return bool(cls.IMMICH_URL and cls.IMMICH_API_KEY)
-
-    @classmethod
-    def immich_db_enabled(cls):
-        """The Immich database is usable when a URL or host and password are given."""
-        return bool(cls.IMMICH_DB_URL or (cls.IMMICH_DB_HOST and cls.IMMICH_DB_PASSWORD))
-
-    @classmethod
     def immich_enabled(cls):
-        """Immich integration is active when either backend is configured."""
-        return cls.immich_api_enabled() or cls.immich_db_enabled()
+        """Immich integration is active when the database is configured."""
+        return bool(cls.IMMICH_DB_URL or (cls.IMMICH_DB_HOST and cls.IMMICH_DB_PASSWORD))
 
     @classmethod
     def path_map(cls):
@@ -124,30 +107,6 @@ class Config:
         return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
 
     @classmethod
-    def user_api_keys(cls):
-        """
-        Load the optional per-user Immich API key map.
-
-        Returns:
-            dict: Mapping of lowercase user id or email to API key.
-        """
-        if not cls.IMMICH_API_KEYS_FILE:
-            return {}
-
-        path = Path(cls.IMMICH_API_KEYS_FILE)
-        if not path.exists():
-            print(f"Immich API key file not found: {path}")
-            return {}
-
-        try:
-            with open(path) as handle:
-                data = json.load(handle)
-            return {str(key).lower(): value for key, value in data.items()}
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"Failed to read Immich API key file {path}: {e}")
-            return {}
-
-    @classmethod
     def validate(cls):
         required = ['EMAIL_ADDRESS', 'SMTP_SERVER', 'SMTP_USER', 'SMTP_PASS']
         missing = [field for field in required if not getattr(cls, field)]
@@ -160,11 +119,8 @@ class Config:
         if cls.IMMICH_DELETE_MODE not in ('trash', 'permanent'):
             raise ValueError(f"IMMICH_DELETE_MODE must be trash or permanent (got '{cls.IMMICH_DELETE_MODE}')")
 
-        if cls.IMMICH_URL and not cls.IMMICH_API_KEY and not cls.immich_db_enabled():
-            raise ValueError("IMMICH_URL is set but neither IMMICH_API_KEY nor IMMICH_DB_* is configured")
-
         if cls.IMMICH_DB_HOST and not cls.IMMICH_DB_PASSWORD and not cls.IMMICH_DB_URL:
             raise ValueError("IMMICH_DB_HOST is set but IMMICH_DB_PASSWORD is missing")
 
-        if cls.immich_db_enabled() and not cls.IMMICH_EXTERNAL_URL:
+        if cls.immich_enabled() and not cls.IMMICH_EXTERNAL_URL:
             print("Warning: IMMICH_EXTERNAL_URL is not set, so Immich links will be omitted")

@@ -88,7 +88,7 @@ class ReviewStore:
             redacted_path: Path to the blurred preview produced by the moderator
             detections: Raw detection data
             media_type: 'image' or 'video'
-            immich_context: Asset context from ImmichClient.resolve_asset
+            immich_context: Asset context from Immich.resolve_asset
             frame_number: Frame index for videos
             frame_timestamp: Frame timestamp in seconds for videos
 

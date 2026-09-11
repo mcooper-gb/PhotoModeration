@@ -3,7 +3,7 @@ import sys
 import threading
 
 from src.config import Config
-from src.services.immich import ImmichClient
+from src.services.immich import Immich
 from src.services.immich_db import ImmichDatabase, build_dsn
 from src.services.moderator import Moderator
 from src.services.notifier import Notifier
@@ -24,7 +24,7 @@ def initial_scan(scanner, moderator, notifier, batch_size, immich=None, review_s
         moderator: Moderator instance for detection
         notifier: Notifier instance for sending alerts
         batch_size: Maximum number of detections before sending batch
-        immich: Optional ImmichClient for asset and owner lookup
+        immich: Optional Immich integration for asset and owner lookup
         review_store: Optional ReviewStore for the moderation dashboard
         dashboard_url: Optional dashboard base URL used in review links
     """
@@ -78,7 +78,7 @@ def build_immich_database():
     Returns:
         ImmichDatabase or None
     """
-    if not Config.immich_db_enabled():
+    if not Config.immich_enabled():
         return None
 
     database = ImmichDatabase(
@@ -97,44 +97,30 @@ def build_immich_database():
     return database if database.verify() else None
 
 
-def build_immich_client():
+def build_immich():
     """
-    Create the Immich client when the integration is configured.
+    Create the Immich integration when the database is configured.
 
     Returns:
-        ImmichClient or None
+        Immich or None
     """
     if not Config.immich_enabled():
-        print("Immich integration disabled (set IMMICH_URL plus IMMICH_API_KEY or IMMICH_DB_* to enable)")
+        print("Immich integration disabled (set IMMICH_DB_* to enable)")
         return None
 
     database = build_immich_database()
+    if not database:
+        print("Immich integration unavailable: the database could not be used")
+        return None
 
-    client = ImmichClient(
-        Config.IMMICH_URL,
-        Config.IMMICH_API_KEY,
+    print(f"Moderating every user's assets (delete mode: {Config.IMMICH_DELETE_MODE}, "
+          f"Immich trash retention: {database.trash_days()} days)")
+
+    return Immich(
+        database,
         external_url=Config.IMMICH_EXTERNAL_URL,
-        timeout=Config.IMMICH_TIMEOUT,
-        verify_ssl=Config.IMMICH_VERIFY_SSL,
-        path_map=Config.path_map(),
         delete_mode=Config.IMMICH_DELETE_MODE,
-        user_api_keys=Config.user_api_keys(),
-        database=database,
     )
-
-    if Config.immich_api_enabled():
-        if client.ping():
-            print(f"Connected to the Immich API at {Config.IMMICH_URL}")
-        else:
-            print(f"Immich at {Config.IMMICH_URL} is not reachable yet, will retry on demand")
-
-    if client.admin_mode:
-        print(f"Admin moderation enabled for all users (delete mode: {Config.IMMICH_DELETE_MODE})")
-    else:
-        print("Admin moderation unavailable: without IMMICH_DB_*, Immich API keys only "
-              "cover their own user's assets")
-
-    return client
 
 
 def start_dashboard(review_store, immich, notifier, moderator):
@@ -143,7 +129,7 @@ def start_dashboard(review_store, immich, notifier, moderator):
 
     Args:
         review_store: ReviewStore backing the queue
-        immich: Optional ImmichClient
+        immich: Optional Immich integration
         notifier: Notifier used to email asset owners
         moderator: Moderator used to re-extract video frames
 
@@ -214,7 +200,7 @@ def main():
         Config.DASHBOARD_URL if Config.DASHBOARD_ENABLED else None
     )
 
-    immich = build_immich_client()
+    immich = build_immich()
 
     review_store = ReviewStore(Config.REVIEW_DB_PATH, Config.REVIEW_DIR)
     purged = review_store.purge_resolved(Config.REVIEW_RETENTION_DAYS)

@@ -16,8 +16,8 @@
                 <p class="warning">Showing the unredacted original.</p>
             {% else %}
                 <p class="meta">
-                    The original is no longer available. The source file is gone from the
-                    scanned library{% if item.immich_asset_id %} and Immich could not supply it{% endif %}.
+                    The original is no longer available: the source file is gone from the
+                    scanned library.
                 </p>
             {% endif %}
             <a class="button" href="{{ url_for('detail', item_id=item.id) }}">Show redacted</a>
@@ -85,13 +85,6 @@
             {% if immich_enabled and item.immich_asset_id %}
                 <fieldset>
                     <legend>Delete from Immich</legend>
-                    {% if not admin_mode %}
-                        <p class="warning">
-                            Without database access this can only delete assets owned by the
-                            Immich API key's own user. Set <code>IMMICH_DB_*</code> to moderate
-                            every user's uploads.
-                        </p>
-                    {% endif %}
                     <label>
                         <input type="radio" name="mode" value="trash" {{ 'checked' if delete_mode != 'permanent' }}>
                         Move to the uploader's Immich trash (recoverable)
@@ -99,7 +92,7 @@
                     <label>
                         <input type="radio" name="mode" value="permanent" {{ 'checked' if delete_mode == 'permanent' }}>
                         Delete permanently
-                        {% if admin_mode %}<span class="meta">(files removed by Immich's next cleanup run)</span>{% endif %}
+                        <span class="meta">(files removed by Immich's next cleanup run)</span>
                     </label>
                     <label class="notify {{ 'disabled' if not can_notify }}">
                         <input type="checkbox" name="notify" {{ 'checked' if notify_default and can_notify }}

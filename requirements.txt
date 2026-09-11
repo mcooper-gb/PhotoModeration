@@ -5,7 +5,6 @@ onnxruntime
 numpy
 watchdog
 Pillow
-requests
 Flask
 waitress
 psycopg[binary]

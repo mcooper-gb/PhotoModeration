@@ -87,7 +87,7 @@ def process_media_file(file_path, moderator, scanner, batch, immich=None, review
         moderator: Moderator instance for detection and redaction
         scanner: Scanner instance to mark file as scanned
         batch: List to append detection results to
-        immich: Optional ImmichClient used to identify the asset and its owner
+        immich: Optional Immich integration used to identify the asset and its owner
         review_store: Optional ReviewStore used to queue the detection for review
         dashboard_url: Optional dashboard base URL used to build review links
     """

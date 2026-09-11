@@ -22,7 +22,7 @@ PhotoModeration/
     │   ├── __init__.py
     │   ├── scanner.py          # File scanning and tracking
     │   ├── moderator.py        # Content detection and redaction
-    │   ├── immich.py           # Immich client (database first, API fallback)
+    │   ├── immich.py           # Immich integration facade
     │   ├── immich_db.py        # Immich database access for admin moderation
     │   ├── review_store.py     # Moderation review queue
     │   ├── notifier.py         # Email notification service
@@ -71,12 +71,11 @@ Manages application configuration from environment variables. Validates required
 
 #### immich.py
 - Single entry point the rest of the service talks to for anything Immich
-- Prefers the database backend, which covers every user, and falls back to the REST API
-  (base path `/api`, `x-api-key` auth) when only a key is configured
-- Matches a file on disk to an Immich asset by filename UUID, SHA1 checksum,
-  original path, then original filename
-- Resolves the uploader, falling back to the user id or storage label in the library path
-- Explains the usual cause when an API delete is rejected, since keys are user scoped
+- Resolves an asset through the database, falling back to the user id or storage label in
+  the library path so the uploader is still named when no asset row matches
+- Builds Immich web links and applies moderation decisions
+- Never touches the Immich REST API: keys are scoped to one user, so the API cannot
+  moderate a shared library
 
 #### immich_db.py
 - Connects to Immich's PostgreSQL database, which is the only way one admin can moderate
@@ -86,6 +85,7 @@ Manages application configuration from environment variables. Validates required
   needs before allowing any write
 - Resolves assets and uploaders by original path, checksum, then filename, refusing an
   ambiguous filename match
+- Reads Immich's configured trash retention when the settings table is readable
 - Writes only `status` and `deletedAt`, the same columns Immich's own delete sets, and
   leaves file, thumbnail and row cleanup to Immich's background jobs
 
@@ -140,7 +140,8 @@ Manages application configuration from environment variables. Validates required
 
 #### dashboard.py
 - Flask application serving the moderation queue
-- Serves redacted previews by default; originals only when explicitly revealed
+- Serves redacted previews from the retained copy; originals only when explicitly
+  revealed, read from the scanned library
 - Applies moderation decisions: keep, delete (trash or permanent), restore
 - Optionally emails the uploader as part of a deletion
 - Optional HTTP basic auth, served by waitress when available
@@ -218,7 +219,6 @@ See `requirements.txt` for full list. Key dependencies:
 - **opencv-python**: Image and video processing, blur and mosaic redaction
 - **Pillow**: EXIF data extraction
 - **watchdog**: File system monitoring
-- **requests**: Immich API calls
 - **psycopg**: Immich database access for admin moderation
 - **Flask**: Moderation dashboard
 - **waitress**: Production WSGI server for the dashboard

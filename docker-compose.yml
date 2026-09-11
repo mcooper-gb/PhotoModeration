@@ -46,9 +46,9 @@ services:
       - REDACTION_STRENGTH=${REDACTION_STRENGTH:-60}
       - REDACTION_PADDING=${REDACTION_PADDING:-8}
 
-      # Immich admin moderation. The database is what lets one admin act on
-      # every user's assets; Immich API keys only ever cover their own user.
-      # Use a restricted role (see README.md), not the postgres superuser.
+      # Immich admin moderation. The database is the whole integration: Immich
+      # API keys only ever cover their own user, so they cannot moderate a
+      # shared library. Use a restricted role (see README.md), not postgres.
       - IMMICH_DB_HOST=${IMMICH_DB_HOST:-}
       - IMMICH_DB_PORT=${IMMICH_DB_PORT:-5432}
       - IMMICH_DB_NAME=${IMMICH_DB_NAME:-immich}
@@ -59,10 +59,6 @@ services:
       - IMMICH_PATH_MAP=${IMMICH_PATH_MAP:-/data/scan:upload/library}
       - IMMICH_DELETE_MODE=${IMMICH_DELETE_MODE:-trash}
       - IMMICH_NOTIFY_OWNER_DEFAULT=${IMMICH_NOTIFY_OWNER_DEFAULT:-false}
-
-      # Optional API fallback (not needed for admin moderation)
-      - IMMICH_URL=${IMMICH_URL:-}
-      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
 
       # Moderation dashboard
       - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-true}

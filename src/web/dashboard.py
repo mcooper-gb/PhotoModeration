@@ -31,7 +31,7 @@ class Dashboard:
 
         Args:
             review_store: ReviewStore holding the flagged queue
-            immich: Optional ImmichClient used for deletion and original media
+            immich: Optional Immich integration used for deletion and restores
             notifier: Optional Notifier used to email asset owners
             moderator: Optional Moderator, used to re-extract video frames
             allow_reveal: Whether moderators may view the unredacted original
@@ -145,7 +145,6 @@ class Dashboard:
             original_available=self._original_available(item),
             allow_reveal=self.allow_reveal,
             immich_enabled=self.immich is not None,
-            admin_mode=bool(self.immich and self.immich.admin_mode),
             can_notify=can_notify,
             notify_blocked=notify_blocked,
             notify_default=self.notify_owner_default,
@@ -162,12 +161,6 @@ class Dashboard:
         redacted_path = item.get('redacted_path')
         if redacted_path and Path(redacted_path).exists():
             return send_file(redacted_path, mimetype='image/jpeg')
-
-        # Fall back to the Immich thumbnail, which is still safer than the original.
-        if self.immich and item.get('immich_asset_id'):
-            data = self.immich.fetch_thumbnail(item['immich_asset_id'], item.get('immich_owner_id'))
-            if data:
-                return Response(data, mimetype='image/jpeg')
 
         abort(404)
 
@@ -190,11 +183,6 @@ class Dashboard:
         if source.exists():
             mimetype = mimetypes.guess_type(source.name)[0] or 'application/octet-stream'
             return send_file(source, mimetype=mimetype)
-
-        if self.immich and item.get('immich_asset_id'):
-            data = self.immich.fetch_original(item['immich_asset_id'], item.get('immich_owner_id'))
-            if data:
-                return Response(data, mimetype='application/octet-stream')
 
         abort(404)
 
@@ -261,9 +249,7 @@ class Dashboard:
             return
 
         permanent = (mode or self.delete_mode) == 'permanent'
-        success, detail = self.immich.delete_asset(
-            item['immich_asset_id'], item.get('immich_owner_id'), permanent=permanent
-        )
+        success, detail = self.immich.delete_asset(item['immich_asset_id'], permanent=permanent)
 
         if not success:
             self.review_store.set_status(item_id, STATUS_ERROR, detail)
@@ -294,7 +280,7 @@ class Dashboard:
             flash('Nothing to restore for this detection.', 'error')
             return
 
-        success, detail = self.immich.restore_asset(item['immich_asset_id'], item.get('immich_owner_id'))
+        success, detail = self.immich.restore_asset(item['immich_asset_id'])
         if success:
             self.review_store.set_status(item['id'], STATUS_PENDING, detail)
             flash(detail, 'success')
@@ -302,18 +288,15 @@ class Dashboard:
             self.review_store.set_status(item['id'], STATUS_ERROR, detail)
             flash(f'Restore failed: {detail}', 'error')
 
-    def _original_available(self, item):
+    @staticmethod
+    def _original_available(item):
         """
         Report whether the unredacted original can still be served.
 
-        The source file may have been deleted or unmounted since it was
-        flagged, in which case only Immich can supply it.
+        Originals are read from the scanned library, so they are unavailable
+        once the source file has been removed or unmounted.
         """
-        if Path(item['original_path']).exists():
-            return True
-        if item.get('media_type') == 'video':
-            return False
-        return bool(self.immich and item.get('immich_asset_id'))
+        return Path(item['original_path']).exists()
 
     def _video_frame(self, video_path, frame_number):
         """Re-extract a video frame so originals never need storing on disk."""
