@@ -133,6 +133,10 @@ class ImmichDatabase:
         Tries the original path as Immich stores it, then the file's SHA1
         checksum, then the filename.
 
+        A filename says nothing about where a file is or who owns it, so that
+        last attempt names the uploader without offering an asset id: a guess
+        must never become the target of a delete.
+
         Args:
             file_path: Path to the local file
 
@@ -143,24 +147,28 @@ class ImmichDatabase:
         self._require_schema()
 
         immich_path = self.to_immich_path(file_path)
-        checksum = sha1_digest(file_path)
         filename = str(file_path).rsplit('/', 1)[-1]
 
-        attempts = []
+        attempts = [
+            ('db-checksum', 'checksum = %s', lambda: sha1_digest(file_path)),
+            ('db-filename', '"originalFileName" = %s', lambda: filename),
+        ]
         if immich_path:
-            attempts.append(('db-original-path', '"originalPath" = %s', (immich_path,)))
-        if checksum:
-            attempts.append(('db-checksum', 'checksum = %s', (checksum,)))
-        attempts.append(('db-filename', '"originalFileName" = %s', (filename,)))
+            attempts.insert(0, ('db-original-path', '"originalPath" = %s', lambda: immich_path))
 
         with self._connect() as conn:
-            for strategy, clause, params in attempts:
+            for strategy, clause, value in attempts:
+                # Checksumming reads the whole file, so it waits until the path attempt has missed.
+                param = value()
+                if param is None:
+                    continue
+
                 rows = conn.execute(
                     f'SELECT a.id, a."ownerId", a.status, u.name, u.email '
                     f'FROM "{self.asset_table}" a '
                     f'JOIN "{self.user_table}" u ON u.id = a."ownerId" '
                     f'WHERE a.{clause} LIMIT 2',
-                    params
+                    (param,)
                 ).fetchall()
 
                 # Too risky to act on the wrong user's asset.
@@ -169,7 +177,7 @@ class ImmichDatabase:
 
                 row = rows[0]
                 return {
-                    'asset_id': str(row['id']),
+                    'asset_id': None if strategy == 'db-filename' else str(row['id']),
                     'owner_id': str(row['ownerId']),
                     'owner_name': row['name'],
                     'owner_email': row['email'],
@@ -228,16 +236,17 @@ class ImmichDatabase:
 
         Only directories inside the mapped library are considered, so a mount
         point that happens to share a name with someone's storage label cannot
-        be mistaken for it. The file name itself is never a candidate.
+        be mistaken for it. The file name itself is never a candidate, and an
+        unmapped path yields nothing at all rather than every directory on it.
         """
         path_str = str(Path(file_path))
 
         for local_prefix, _ in self.path_map:
-            if path_str.startswith(local_prefix):
-                relative = Path(path_str[len(local_prefix):].lstrip('/'))
-                return [part for part in relative.parts[:-1]]
+            relative = _below_prefix(path_str, local_prefix)
+            if relative is not None:
+                return list(Path(relative).parts[:-1])
 
-        return [part for part in Path(path_str).parts[:-1] if part != '/']
+        return []
 
     def trash_days(self):
         """
@@ -284,9 +293,9 @@ class ImmichDatabase:
         """Translate a locally mounted path into the path Immich stores."""
         path_str = str(file_path)
         for local_prefix, immich_prefix in self.path_map:
-            if path_str.startswith(local_prefix):
-                suffix = path_str[len(local_prefix):].lstrip('/')
-                return f"{immich_prefix}/{suffix}"
+            relative = _below_prefix(path_str, local_prefix)
+            if relative:
+                return f"{immich_prefix}/{relative}"
         return None
 
     def trash_asset(self, asset_id):
@@ -373,6 +382,18 @@ class ImmichDatabase:
             return False, f"Immich database update failed: {e}"
 
         return True, success_detail
+
+
+def _below_prefix(path_str, prefix):
+    """
+    Return the part of a path below a mapped prefix, or None when it is outside it.
+
+    Matched on a separator, so a /data/scan mapping does not swallow /data/scan2.
+    """
+    prefix = prefix.rstrip('/')
+    if path_str.startswith(prefix + '/'):
+        return path_str[len(prefix) + 1:]
+    return None
 
 
 def sha1_digest(file_path):
