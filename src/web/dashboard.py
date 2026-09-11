@@ -145,6 +145,7 @@ class Dashboard:
             original_available=self._original_available(item),
             allow_reveal=self.allow_reveal,
             immich_enabled=self.immich is not None,
+            admin_mode=bool(self.immich and self.immich.admin_mode),
             can_notify=can_notify,
             notify_blocked=notify_blocked,
             notify_default=self.notify_owner_default,

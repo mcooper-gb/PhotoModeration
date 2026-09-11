@@ -39,7 +39,10 @@
                     Open in Immich
                 </a>
             </p>
-            <p class="warning">Immich always shows the original, unredacted asset.</p>
+            <p class="warning">
+                Immich always shows the original, unredacted asset, and only to the user who
+                owns it &mdash; use the view above to review someone else's upload.
+            </p>
         {% endif %}
     </div>
 
@@ -82,13 +85,21 @@
             {% if immich_enabled and item.immich_asset_id %}
                 <fieldset>
                     <legend>Delete from Immich</legend>
+                    {% if not admin_mode %}
+                        <p class="warning">
+                            Without database access this can only delete assets owned by the
+                            Immich API key's own user. Set <code>IMMICH_DB_*</code> to moderate
+                            every user's uploads.
+                        </p>
+                    {% endif %}
                     <label>
                         <input type="radio" name="mode" value="trash" {{ 'checked' if delete_mode != 'permanent' }}>
-                        Move to Immich trash (recoverable)
+                        Move to the uploader's Immich trash (recoverable)
                     </label>
                     <label>
                         <input type="radio" name="mode" value="permanent" {{ 'checked' if delete_mode == 'permanent' }}>
                         Delete permanently
+                        {% if admin_mode %}<span class="meta">(files removed by Immich's next cleanup run)</span>{% endif %}
                     </label>
                     <label class="notify {{ 'disabled' if not can_notify }}">
                         <input type="checkbox" name="notify" {{ 'checked' if notify_default and can_notify }}

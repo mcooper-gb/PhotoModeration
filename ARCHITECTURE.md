@@ -22,7 +22,8 @@ PhotoModeration/
     │   ├── __init__.py
     │   ├── scanner.py          # File scanning and tracking
     │   ├── moderator.py        # Content detection and redaction
-    │   ├── immich.py           # Immich API client
+    │   ├── immich.py           # Immich client (database first, API fallback)
+    │   ├── immich_db.py        # Immich database access for admin moderation
     │   ├── review_store.py     # Moderation review queue
     │   ├── notifier.py         # Email notification service
     │   ├── batch_manager.py    # Notification batching
@@ -69,12 +70,24 @@ Manages application configuration from environment variables. Validates required
 - Re-extracts individual video frames on demand for the dashboard
 
 #### immich.py
-- Wraps the Immich REST API (base path `/api`, `x-api-key` auth)
+- Single entry point the rest of the service talks to for anything Immich
+- Prefers the database backend, which covers every user, and falls back to the REST API
+  (base path `/api`, `x-api-key` auth) when only a key is configured
 - Matches a file on disk to an Immich asset by filename UUID, SHA1 checksum,
   original path, then original filename
 - Resolves the uploader, falling back to the user id or storage label in the library path
-- Deletes assets through the API so the Immich database is never left with orphaned rows
-- Selects a per-user API key when one is configured, since Immich keys are user scoped
+- Explains the usual cause when an API delete is rejected, since keys are user scoped
+
+#### immich_db.py
+- Connects to Immich's PostgreSQL database, which is the only way one admin can moderate
+  every user's assets: Immich has no admin permission for another user's asset and no
+  impersonation endpoint
+- Detects the table naming the running Immich version uses and verifies the columns it
+  needs before allowing any write
+- Resolves assets and uploaders by original path, checksum, then filename, refusing an
+  ambiguous filename match
+- Writes only `status` and `deletedAt`, the same columns Immich's own delete sets, and
+  leaves file, thumbnail and row cleanup to Immich's background jobs
 
 #### review_store.py
 - SQLite queue of flagged detections backing the dashboard
@@ -157,7 +170,8 @@ Manages application configuration from environment variables. Validates required
 4. **Moderation** (dashboard):
    - Moderator works through the pending queue, seeing redacted previews
    - Revealing the original reads from the source file, or re-extracts a video frame
-   - Deleting calls the Immich API (trash by default) and optionally emails the uploader
+   - Deleting applies Immich's own trash or delete state (trash by default) and optionally
+     emails the uploader
    - Outcome and notification state are recorded against the review item
 
 ## Design Principles
@@ -205,6 +219,7 @@ See `requirements.txt` for full list. Key dependencies:
 - **Pillow**: EXIF data extraction
 - **watchdog**: File system monitoring
 - **requests**: Immich API calls
+- **psycopg**: Immich database access for admin moderation
 - **Flask**: Moderation dashboard
 - **waitress**: Production WSGI server for the dashboard
 - **smtplib**: Email sending (built-in)
@@ -214,7 +229,9 @@ See `requirements.txt` for full list. Key dependencies:
 The application is containerized with Docker:
 - Base image: `python:3.13-bookworm`
 - Volumes for data persistence, including retained dashboard previews
-- The Immich library is mounted read-only; deletion only ever happens through the API
+- The Immich library is mounted read-only; no file is ever deleted by this service
+- Needs network access to Immich's PostgreSQL, using a role restricted to the two columns
+  it writes
 - Dashboard exposed on port 8080
 - Environment-based configuration
 - Health check polls the dashboard `/healthz` endpoint

@@ -2,8 +2,8 @@
 
 Automated media scanning that detects explicit content in an Immich library, blurs the
 offending regions, identifies who uploaded the asset, and gives moderators a dashboard to
-work through the queue — including deleting assets through the Immich API so the Immich
-database stays consistent.
+work through the queue — including deleting any user's asset the same way Immich itself
+does, so the Immich database and library stay consistent.
 
 ## How It Works
 
@@ -11,16 +11,76 @@ database stays consistent.
 2. **Explicit Content Detection** - Uses the NudeNet AI model to analyse images and video frames
 3. **Blur Redaction** - Detected regions are blurred (or pixelated) rather than covered with a black box
 4. **Immich Lookup** - Matches each file to its Immich asset and the user who uploaded it
+   (one admin covers every user; no per-user API keys)
 5. **Email Notifications** - Sends batched alerts with the redacted preview, the uploader, a review link and an Immich link
 6. **Moderation Dashboard** - A web queue of every flagged item, redacted by default, with reveal, keep and delete actions
-7. **Safe Deletion** - Deletes through the Immich API (trash by default), optionally emailing the uploader
+7. **Safe Deletion** - Applies Immich's own delete (trash by default), optionally emailing the uploader
 8. **Duplicate Prevention** - Tracks processed files in SQLite to avoid re-scanning
 
 ## Immich Integration
 
-### 1. Create an API key
+### Admin moderation (recommended)
 
-In Immich: **Account Settings → API Keys → New API Key**. The service needs these permissions:
+One admin moderates every user's uploads, and no user has to hand over an API key.
+
+This needs database access, because the Immich API cannot do it. Immich API keys are scoped
+to the user that created them: there is no admin permission for another user's asset (the
+API exposes `adminUser`, `adminSession` and `adminConfig` permissions, but nothing for
+assets), no `/admin/assets` endpoint, and no impersonation — `POST /sessions` and
+`POST /api-keys` both act only on the caller. An admin key gets `400`/`403` on anyone
+else's asset.
+
+```dotenv
+IMMICH_DB_HOST=immich-postgres
+IMMICH_DB_NAME=immich
+IMMICH_DB_USER=photomod
+IMMICH_DB_PASSWORD=a-strong-password
+IMMICH_EXTERNAL_URL=https://photos.example.com
+IMMICH_PATH_MAP=/data/scan:upload/library
+```
+
+`IMMICH_DB_URL` can be used instead of the individual settings.
+
+### Give the service its own restricted database role
+
+Do not point it at the `postgres` superuser. Create a role that can read what it needs and
+write only the two columns Immich's own delete touches:
+
+```sql
+CREATE USER photomod WITH PASSWORD 'a-strong-password';
+GRANT CONNECT ON DATABASE immich TO photomod;
+GRANT USAGE ON SCHEMA public TO photomod;
+GRANT SELECT ON asset, "user" TO photomod;
+GRANT UPDATE (status, "deletedAt") ON asset TO photomod;
+```
+
+On Immich versions that still use the plural table names, use `assets` and `users` instead
+— the service detects which naming your schema uses at startup, and refuses to start in
+admin mode if the columns it needs are missing, naming them in the log.
+
+With that role the service cannot delete rows, rewrite paths, change users, or alter the
+schema, even if it is compromised.
+
+### What deletion actually does
+
+Immich's own delete sets two columns (`AssetService.deleteAll`), and this service sets
+exactly the same ones, so a moderated asset ends up in the same state as one the owner
+deleted themselves:
+
+| Action | Row state | Result |
+|---|---|---|
+| Move to trash | `status='trashed'`, `deletedAt=now()` | Leaves the timeline, appears in the owner's trash, restorable; Immich purges it when its trash retention expires |
+| Delete permanently | `status='deleted'` | Gone from Immich immediately, as if the owner emptied their trash; Immich's own cleanup job removes the files, thumbnails and rows on its next run |
+
+This service never deletes a file from disk and never deletes a database row — all of that
+stays with Immich's background jobs. The `updatedAt`/`updateId` trigger fires on the
+update, so clients pick the change up through normal sync.
+
+### API key (optional)
+
+An API key adds nothing for moderation, but if you set one the service will read Immich's
+configured trash retention and can fall back to API lookups when the database is not
+configured. In Immich: **Account Settings → API Keys → New API Key**, with:
 
 | Permission | Used for |
 |---|---|
@@ -28,37 +88,12 @@ In Immich: **Account Settings → API Keys → New API Key**. The service needs 
 | `asset.upload` | Checksum lookup via the duplicate check endpoint |
 | `asset.view` | Preview fallback in the dashboard |
 | `asset.download` | Showing the original when a moderator reveals it |
-| `asset.delete` | Trashing or permanently deleting a flagged asset |
+| `asset.delete` | Deleting the key owner's own assets |
 | `user.read` | Resolving the uploader's name and email |
+| `adminConfig.read` | Reading the trash retention |
 
-### 2. Mount the library and point at Immich
-
-```dotenv
-IMMICH_URL=http://immich-server:2283
-IMMICH_EXTERNAL_URL=https://photos.example.com
-IMMICH_API_KEY=your-immich-api-key
-IMMICH_PATH_MAP=/data/scan:upload/library
-```
-
-`IMMICH_PATH_MAP` maps the path this service sees onto the path Immich stores internally.
-Mount the Immich library read-only — files are never deleted from disk, only through the API.
-
-### 3. How assets are matched
-
-Each flagged file is matched to an Immich asset by trying, in order:
-
-1. The asset UUID in the filename (Immich's own storage layout)
-2. A SHA1 checksum lookup (`POST /api/assets/bulk-upload-check`)
-3. The original path (`POST /api/search/metadata`)
-4. The original filename, confirmed by checksum
-
-If none match, the uploader is still recovered from the library path, which contains the
-user id or storage label under Immich's default storage template.
-
-### Deleting other users' assets
-
-Immich API keys are scoped to the user that created them, so an admin key cannot delete
-another user's asset. To moderate a multi-user library, supply a key per user:
+Without database access, deletion only works for assets owned by the key's own user. As a
+fallback you can supply a key per user, but this is no longer the recommended setup:
 
 ```dotenv
 IMMICH_API_KEYS_FILE=/data/db/immich-keys.json
@@ -70,7 +105,17 @@ IMMICH_API_KEYS_FILE=/data/db/immich-keys.json
 }
 ```
 
-The service uses the owner's key when one is configured, and the default key otherwise.
+### How assets are matched
+
+With database access, each flagged file is matched on its original path, then its SHA1
+checksum, then its filename (a filename that matches more than one asset is rejected rather
+than guessed). Without it, the API equivalents are used: the asset UUID in the filename, a
+checksum lookup via `POST /api/assets/bulk-upload-check`, then `POST /api/search/metadata`.
+
+If nothing matches, the uploader is still recovered from the library path, which contains
+the user id or storage label under Immich's default storage template.
+
+Mount the Immich library read-only — the service only ever reads from it.
 
 ## Moderation Dashboard
 
@@ -81,7 +126,8 @@ Available on port 8080 by default.
   moderator explicitly chooses "Reveal original" (set `DASHBOARD_ALLOW_REVEAL=false` to
   remove the option entirely)
 - **Uploader details** — name, email, Immich user id and how the asset was matched
-- **Open in Immich** link to the asset in the Immich web app
+- **Open in Immich** link to the asset (Immich shows an asset only to the user who owns it,
+  so use the dashboard's own view to review someone else's upload)
 - **Keep** to mark an item reviewed, or **Delete asset** to remove it from Immich
   (trash by default, permanent optional) with an optional email to the uploader
 - **Restore from trash** for trashed items
@@ -114,13 +160,15 @@ BATCH_SIZE=10
 BATCH_TIMEOUT=60
 CONFIDENCE_THRESHOLD=0.6
 
-# Immich
+# Immich (admin moderation over every user's uploads)
 IMMICH_LIBRARY=/mnt/immich/library
-IMMICH_URL=http://immich-server:2283
 IMMICH_EXTERNAL_URL=https://photos.example.com
-IMMICH_API_KEY=your-immich-api-key
 IMMICH_PATH_MAP=/data/scan:upload/library
 IMMICH_DELETE_MODE=trash
+IMMICH_DB_HOST=immich-postgres
+IMMICH_DB_NAME=immich
+IMMICH_DB_USER=photomod
+IMMICH_DB_PASSWORD=a-strong-password
 
 # Dashboard
 DASHBOARD_PORT=8080
@@ -162,18 +210,24 @@ Replace `build: .` with `image: mcoopergb/photo-moderation:latest` in `docker-co
 
 ### Immich
 
-- `IMMICH_URL` - Internal Immich URL the service calls
-- `IMMICH_EXTERNAL_URL` - Public Immich URL used in links (default: `IMMICH_URL`)
-- `IMMICH_API_KEY` - Immich API key
-- `IMMICH_API_KEYS_FILE` - Optional JSON file of per-user API keys
+- `IMMICH_DB_HOST` / `IMMICH_DB_PORT` - Immich PostgreSQL host and port (default port: 5432)
+- `IMMICH_DB_NAME` / `IMMICH_DB_USER` / `IMMICH_DB_PASSWORD` - Database, role and password
+- `IMMICH_DB_URL` - Full connection URL, used instead of the settings above
+- `IMMICH_DB_TIMEOUT` - Connection timeout in seconds (default: 10)
+- `IMMICH_EXTERNAL_URL` - Public Immich URL used in links
 - `IMMICH_PATH_MAP` - `local:immich` path prefix pairs, comma separated
 - `IMMICH_DELETE_MODE` - `trash` (default, recoverable) or `permanent`
 - `IMMICH_NOTIFY_OWNER_DEFAULT` - Pre-tick the notify-uploader checkbox (default: false)
+- `IMMICH_URL` - Internal Immich URL, only needed for the optional API fallback
+- `IMMICH_API_KEY` - Immich API key (optional, see above)
+- `IMMICH_API_KEYS_FILE` - Optional JSON file of per-user API keys (fallback only)
 - `IMMICH_TIMEOUT` - API timeout in seconds (default: 15)
 - `IMMICH_VERIFY_SSL` - Verify TLS certificates (default: true)
 
-Immich integration stays off until both `IMMICH_URL` and `IMMICH_API_KEY` are set; without
-it the service still scans, blurs and emails, but cannot name the uploader or delete assets.
+Immich integration stays off until either `IMMICH_DB_*` or `IMMICH_URL` plus
+`IMMICH_API_KEY` is set; without it the service still scans, blurs and emails, but cannot
+name the uploader or delete assets. Only the database settings give one admin control over
+every user's uploads.
 
 ### Dashboard
 

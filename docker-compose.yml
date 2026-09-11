@@ -46,13 +46,23 @@ services:
       - REDACTION_STRENGTH=${REDACTION_STRENGTH:-60}
       - REDACTION_PADDING=${REDACTION_PADDING:-8}
 
-      # Immich integration
-      - IMMICH_URL=${IMMICH_URL:-}
+      # Immich admin moderation. The database is what lets one admin act on
+      # every user's assets; Immich API keys only ever cover their own user.
+      # Use a restricted role (see README.md), not the postgres superuser.
+      - IMMICH_DB_HOST=${IMMICH_DB_HOST:-}
+      - IMMICH_DB_PORT=${IMMICH_DB_PORT:-5432}
+      - IMMICH_DB_NAME=${IMMICH_DB_NAME:-immich}
+      - IMMICH_DB_USER=${IMMICH_DB_USER:-photomod}
+      - IMMICH_DB_PASSWORD=${IMMICH_DB_PASSWORD:-}
+      - IMMICH_DB_URL=${IMMICH_DB_URL:-}
       - IMMICH_EXTERNAL_URL=${IMMICH_EXTERNAL_URL:-}
-      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
       - IMMICH_PATH_MAP=${IMMICH_PATH_MAP:-/data/scan:upload/library}
       - IMMICH_DELETE_MODE=${IMMICH_DELETE_MODE:-trash}
       - IMMICH_NOTIFY_OWNER_DEFAULT=${IMMICH_NOTIFY_OWNER_DEFAULT:-false}
+
+      # Optional API fallback (not needed for admin moderation)
+      - IMMICH_URL=${IMMICH_URL:-}
+      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
 
       # Moderation dashboard
       - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-true}
@@ -64,6 +74,11 @@ services:
       - REVIEW_DB_PATH=/data/db/review.db
       - REVIEW_RETENTION_DAYS=${REVIEW_RETENTION_DAYS:-30}
 
+    # Reach the Immich database; adjust to match your Immich deployment
+    networks:
+      - default
+      - immich
+
     restart: unless-stopped
 
     # Health check hits the dashboard, which also reports the review queue
@@ -74,6 +89,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+networks:
+  # The network Immich's postgres container is on. Rename or set
+  # `external: false` if this service runs in the Immich compose project.
+  immich:
+    external: true
+    name: ${IMMICH_NETWORK:-immich_default}
 
 volumes:
   # Named volume for persistent databases

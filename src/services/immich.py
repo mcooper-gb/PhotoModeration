@@ -29,41 +29,63 @@ class ImmichError(Exception):
 class ImmichClient:
     """Talks to an Immich server on behalf of the moderation service."""
 
-    def __init__(self, base_url, api_key, external_url=None, timeout=15, verify_ssl=True,
-                 path_map=None, delete_mode='trash', user_api_keys=None):
+    def __init__(self, base_url=None, api_key=None, external_url=None, timeout=15, verify_ssl=True,
+                 path_map=None, delete_mode='trash', user_api_keys=None, database=None):
         """
         Initialize the client.
 
         Args:
             base_url: Internal Immich URL, e.g. http://immich-server:2283
-            api_key: Immich API key used for all requests by default
+            api_key: Immich API key used for API requests
             external_url: Public Immich URL used when building links
             timeout: Request timeout in seconds
             verify_ssl: Whether to verify TLS certificates
             path_map: List of (local_prefix, immich_prefix) tuples
             delete_mode: 'trash' (recoverable) or 'permanent'
             user_api_keys: Optional dict of user id/email -> API key
+            database: Optional ImmichDatabase giving admin-wide moderation
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = (base_url or '').rstrip('/')
         self.api_url = f"{self.base_url}/api"
         self.api_key = api_key
-        self.external_url = (external_url or base_url).rstrip('/')
+        self.external_url = (external_url or base_url or '').rstrip('/')
         self.timeout = timeout
         self.verify_ssl = verify_ssl
         self.path_map = path_map or []
         self.delete_mode = delete_mode
         self.user_api_keys = {str(k).lower(): v for k, v in (user_api_keys or {}).items()}
+        self.database = database
 
         self.session = requests.Session()
         self._users_by_id = {}
         self._storage_labels = {}
         self._users_loaded = False
+        self._trash_days = None
         self._lock = threading.Lock()
+
+    @property
+    def api_enabled(self):
+        """Whether API calls can be made at all."""
+        return bool(self.base_url and self.api_key)
+
+    @property
+    def admin_mode(self):
+        """
+        Whether every user's assets can be moderated.
+
+        True when the Immich database is configured: API keys are scoped to a
+        single user, so the database is the only way an admin can act on
+        assets belonging to everyone else.
+        """
+        return bool(self.database and self.database.available)
 
     # --- HTTP plumbing ---------------------------------------------------
 
     def _request(self, method, path, api_key=None, **kwargs):
         """Send a request to the Immich API and return the parsed response."""
+        if not self.api_enabled:
+            raise ImmichError("the Immich API is not configured")
+
         url = f"{self.api_url}{path}"
         headers = kwargs.pop('headers', {})
         headers['x-api-key'] = api_key or self.api_key
@@ -91,11 +113,36 @@ class ImmichClient:
 
     def ping(self):
         """Check that the Immich server is reachable."""
+        if not self.api_enabled:
+            return False
+
         try:
             return self._request('GET', '/server/ping') is not None
         except ImmichError as e:
             print(f"Immich ping failed: {e}")
             return False
+
+    def trash_days(self):
+        """
+        Read Immich's trash retention, used when scheduling a permanent delete.
+
+        Returns:
+            int: Retention in days, defaulting to Immich's own default of 30
+        """
+        if self._trash_days is not None:
+            return self._trash_days
+
+        self._trash_days = 30
+        if self.api_enabled:
+            try:
+                config = self._request('GET', '/admin/config') or {}
+                trash = config.get('trash') or {}
+                if trash.get('enabled') and trash.get('days'):
+                    self._trash_days = int(trash['days'])
+            except (ImmichError, TypeError, ValueError) as e:
+                print(f"Could not read the Immich trash retention, assuming 30 days: {e}")
+
+        return self._trash_days
 
     # --- Users -----------------------------------------------------------
 
@@ -103,6 +150,10 @@ class ImmichClient:
         """Cache the user directory so owners can be named without asset access."""
         with self._lock:
             if self._users_loaded and not force:
+                return
+
+            if not self.api_enabled:
+                self._users_loaded = True
                 return
 
             users = []
@@ -182,10 +233,11 @@ class ImmichClient:
         """
         Find the Immich asset that corresponds to a file on disk.
 
-        Strategies are tried in order of cost: the asset UUID embedded in the
-        filename, a SHA1 checksum lookup, then a path/filename search. Owner
-        hints derived from the library path are used when the API cannot
-        return the asset itself (API keys cannot read other users' assets).
+        The database is asked first when it is configured, because it sees
+        every user's assets. Otherwise the API is tried in order of cost: the
+        asset UUID embedded in the filename, a SHA1 checksum lookup, then a
+        path/filename search. Owner hints derived from the library path are
+        used when neither can identify the asset.
 
         Args:
             file_path: Path to the local file
@@ -203,6 +255,12 @@ class ImmichClient:
             'link': None,
             'resolved_by': None,
         }
+
+        if self.admin_mode:
+            resolved = self._resolve_via_database(file_path)
+            if resolved:
+                resolved['link'] = self.asset_link(resolved['asset_id'])
+                return resolved
 
         asset = None
         for strategy, finder in (
@@ -240,6 +298,26 @@ class ImmichClient:
 
         context['link'] = self.asset_link(context['asset_id'])
         return context
+
+    def _resolve_via_database(self, file_path):
+        """Look the asset up directly, which works for every user's library."""
+        try:
+            resolved = self.database.resolve_asset(file_path)
+        except Exception as e:
+            print(f"Immich database lookup failed for {file_path.name}: {e}")
+            return None
+
+        if not resolved:
+            return None
+
+        return {
+            'asset_id': resolved['asset_id'],
+            'owner_id': resolved['owner_id'],
+            'owner_name': resolved['owner_name'],
+            'owner_email': resolved['owner_email'],
+            'link': None,
+            'resolved_by': resolved['resolved_by'],
+        }
 
     def _asset_from_filename(self, file_path):
         """Assets stored by Immich are named after their UUID."""
@@ -393,12 +471,12 @@ class ImmichClient:
 
     def delete_asset(self, asset_id, owner_id=None, permanent=None):
         """
-        Delete an asset through the Immich API so its database stays consistent.
+        Delete an asset the way Immich itself does, leaving its data consistent.
 
-        Deleting the file from disk directly would leave an orphaned database
-        row, so this always goes through DELETE /api/assets. By default the
-        asset is moved to the Immich trash, where it stays recoverable until
-        the trash is emptied.
+        With the database configured this works for every user's assets, which
+        the API cannot do: Immich has no admin permission for another user's
+        asset. Either way the file is never removed from disk by this service -
+        Immich's own background jobs do that.
 
         Args:
             asset_id: Immich asset id
@@ -414,12 +492,17 @@ class ImmichClient:
         if permanent is None:
             permanent = self.delete_mode == 'permanent'
 
+        if self.admin_mode:
+            if permanent:
+                return self.database.delete_asset(asset_id, self.trash_days())
+            return self.database.trash_asset(asset_id)
+
         payload = {'ids': [asset_id], 'force': bool(permanent)}
 
         try:
             self._request('DELETE', '/assets', api_key=self.api_key_for_user(owner_id), json=payload)
         except ImmichError as e:
-            return False, str(e)
+            return False, self._explain_api_failure(e)
 
         if permanent:
             return True, "Asset permanently deleted from Immich"
@@ -435,6 +518,9 @@ class ImmichClient:
         if not asset_id:
             return False, "No Immich asset id is associated with this detection"
 
+        if self.admin_mode:
+            return self.database.restore_asset(asset_id)
+
         try:
             self._request(
                 'POST', '/trash/restore/assets',
@@ -442,6 +528,20 @@ class ImmichClient:
                 json={'ids': [asset_id]},
             )
         except ImmichError as e:
-            return False, str(e)
+            return False, self._explain_api_failure(e)
 
         return True, "Asset restored from the Immich trash"
+
+    @staticmethod
+    def _explain_api_failure(error):
+        """
+        Add the likely cause to an API error.
+
+        Immich rejects asset operations on assets the key's own user does not
+        own, which is the usual reason moderation fails without database access.
+        """
+        detail = str(error)
+        if any(code in detail for code in (' 400', ' 403')):
+            detail += (". Immich API keys only cover their own user's assets; "
+                       "configure IMMICH_DB_* so the admin can moderate every user")
+        return detail

@@ -55,6 +55,16 @@ class Config:
     # Maps the locally mounted paths onto the paths Immich stores internally,
     # e.g. "/data/scan:upload/library" (comma separated for multiple mounts).
     IMMICH_PATH_MAP = os.getenv('IMMICH_PATH_MAP', '')
+    # Immich database, which is what lets one admin moderate every user's
+    # assets: Immich API keys only ever cover the user that created them.
+    IMMICH_DB_URL = os.getenv('IMMICH_DB_URL')
+    IMMICH_DB_HOST = os.getenv('IMMICH_DB_HOST')
+    IMMICH_DB_PORT = int(os.getenv('IMMICH_DB_PORT', 5432))
+    IMMICH_DB_NAME = os.getenv('IMMICH_DB_NAME', 'immich')
+    IMMICH_DB_USER = os.getenv('IMMICH_DB_USER', 'postgres')
+    IMMICH_DB_PASSWORD = os.getenv('IMMICH_DB_PASSWORD')
+    IMMICH_DB_TIMEOUT = int(os.getenv('IMMICH_DB_TIMEOUT', 10))
+
     # trash (recoverable, default) or permanent.
     IMMICH_DELETE_MODE = os.getenv('IMMICH_DELETE_MODE', 'trash').strip().lower()
     # Pre-tick the "notify owner" checkbox in the dashboard.
@@ -79,9 +89,19 @@ class Config:
     REVIEW_RETENTION_DAYS = int(os.getenv('REVIEW_RETENTION_DAYS', 30))
 
     @classmethod
-    def immich_enabled(cls):
-        """Immich integration is active when a URL and API key are configured."""
+    def immich_api_enabled(cls):
+        """The Immich API is usable when a URL and API key are configured."""
         return bool(cls.IMMICH_URL and cls.IMMICH_API_KEY)
+
+    @classmethod
+    def immich_db_enabled(cls):
+        """The Immich database is usable when a URL or host and password are given."""
+        return bool(cls.IMMICH_DB_URL or (cls.IMMICH_DB_HOST and cls.IMMICH_DB_PASSWORD))
+
+    @classmethod
+    def immich_enabled(cls):
+        """Immich integration is active when either backend is configured."""
+        return cls.immich_api_enabled() or cls.immich_db_enabled()
 
     @classmethod
     def path_map(cls):
@@ -140,5 +160,11 @@ class Config:
         if cls.IMMICH_DELETE_MODE not in ('trash', 'permanent'):
             raise ValueError(f"IMMICH_DELETE_MODE must be trash or permanent (got '{cls.IMMICH_DELETE_MODE}')")
 
-        if cls.IMMICH_URL and not cls.IMMICH_API_KEY:
-            raise ValueError("IMMICH_URL is set but IMMICH_API_KEY is missing")
+        if cls.IMMICH_URL and not cls.IMMICH_API_KEY and not cls.immich_db_enabled():
+            raise ValueError("IMMICH_URL is set but neither IMMICH_API_KEY nor IMMICH_DB_* is configured")
+
+        if cls.IMMICH_DB_HOST and not cls.IMMICH_DB_PASSWORD and not cls.IMMICH_DB_URL:
+            raise ValueError("IMMICH_DB_HOST is set but IMMICH_DB_PASSWORD is missing")
+
+        if cls.immich_db_enabled() and not cls.IMMICH_EXTERNAL_URL:
+            print("Warning: IMMICH_EXTERNAL_URL is not set, so Immich links will be omitted")

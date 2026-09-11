@@ -4,6 +4,7 @@ import threading
 
 from src.config import Config
 from src.services.immich import ImmichClient
+from src.services.immich_db import ImmichDatabase, build_dsn
 from src.services.moderator import Moderator
 from src.services.notifier import Notifier
 from src.services.review_store import ReviewStore
@@ -69,6 +70,33 @@ def _send_batch(batch, notifier):
         cleanup_censored_files(batch)
 
 
+def build_immich_database():
+    """
+    Connect to the Immich database, which is what gives the admin control over
+    every user's assets.
+
+    Returns:
+        ImmichDatabase or None
+    """
+    if not Config.immich_db_enabled():
+        return None
+
+    database = ImmichDatabase(
+        build_dsn(
+            url=Config.IMMICH_DB_URL,
+            host=Config.IMMICH_DB_HOST,
+            port=Config.IMMICH_DB_PORT,
+            name=Config.IMMICH_DB_NAME,
+            user=Config.IMMICH_DB_USER,
+            password=Config.IMMICH_DB_PASSWORD,
+        ),
+        path_map=Config.path_map(),
+        connect_timeout=Config.IMMICH_DB_TIMEOUT,
+    )
+
+    return database if database.verify() else None
+
+
 def build_immich_client():
     """
     Create the Immich client when the integration is configured.
@@ -77,8 +105,10 @@ def build_immich_client():
         ImmichClient or None
     """
     if not Config.immich_enabled():
-        print("Immich integration disabled (set IMMICH_URL and IMMICH_API_KEY to enable)")
+        print("Immich integration disabled (set IMMICH_URL plus IMMICH_API_KEY or IMMICH_DB_* to enable)")
         return None
+
+    database = build_immich_database()
 
     client = ImmichClient(
         Config.IMMICH_URL,
@@ -89,12 +119,20 @@ def build_immich_client():
         path_map=Config.path_map(),
         delete_mode=Config.IMMICH_DELETE_MODE,
         user_api_keys=Config.user_api_keys(),
+        database=database,
     )
 
-    if client.ping():
-        print(f"Connected to Immich at {Config.IMMICH_URL} (delete mode: {Config.IMMICH_DELETE_MODE})")
+    if Config.immich_api_enabled():
+        if client.ping():
+            print(f"Connected to the Immich API at {Config.IMMICH_URL}")
+        else:
+            print(f"Immich at {Config.IMMICH_URL} is not reachable yet, will retry on demand")
+
+    if client.admin_mode:
+        print(f"Admin moderation enabled for all users (delete mode: {Config.IMMICH_DELETE_MODE})")
     else:
-        print(f"Immich at {Config.IMMICH_URL} is not reachable yet, will retry on demand")
+        print("Admin moderation unavailable: without IMMICH_DB_*, Immich API keys only "
+              "cover their own user's assets")
 
     return client
 
