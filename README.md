@@ -164,6 +164,64 @@ docker-compose up -d
 
 Replace `build: .` with `image: mcoopergb/photo-moderation:latest` in `docker-compose.yml`.
 
+## Upgrading from an earlier version
+
+This release adds the Immich integration and the dashboard. There is no migration step,
+but several things changed around it.
+
+### What carries over
+
+- **The scan tracking database is unchanged.** Files already scanned stay scanned and are
+  not re-detected, so no email or dashboard item is produced for them again.
+- **Nothing you reviewed before appears in the dashboard.** Earlier versions had no review
+  queue: they emailed and deleted the preview. There is no record to import, so the queue
+  starts empty and fills only from detections made after the upgrade.
+- Leftover files in `./censored` from earlier versions are never read again and can be
+  deleted.
+
+### When the whole library gets scanned
+
+Tracking is keyed on the path *inside the container* (`/data/scan/...`) plus the file's
+modification time and size. Whatever directory you mount there is what matters:
+
+- Mounting the same directory you were already scanning, whether or not you now name it
+  with `IMMICH_LIBRARY`, changes nothing. Every file is recognised and skipped.
+- Pointing the service at your Immich library for the first time is a new set of files, so
+  all of it is scanned on the first run. Expect a long initial pass and a batch email for
+  every `BATCH_SIZE` detections — `BATCH_TIMEOUT` does not apply during the initial scan,
+  so raising `BATCH_SIZE` is what keeps the moderator's inbox manageable. The dashboard
+  queue is unaffected either way.
+
+Changing which directory is mounted also leaves the old rows in the tracking database.
+They are harmless, and only match again if a file turns up at the same container path with
+the same modification time and size.
+
+An item that has already been reviewed returns to the queue as pending if its file is
+detected again — the file was modified, or the tracking database was lost. A modified file
+is genuinely new content, so this is deliberate.
+
+### Settings that changed
+
+Removed, and ignored if left in your `.env`: `IMMICH_URL`, `IMMICH_API_KEY`,
+`IMMICH_API_KEYS_FILE`, `IMMICH_TIMEOUT`, `IMMICH_VERIFY_SSL`. Nothing fails on startup —
+the log says `Immich integration disabled` — so check for that line if you expected the
+Immich features to be on.
+
+`DASHBOARD_USER` set with an empty `DASHBOARD_PASS` now refuses to start, rather than
+running a dashboard that accepts any password.
+
+### Compose changes to carry across
+
+If you kept your own `docker-compose.yml`, add:
+
+- `ports` for the dashboard, otherwise it runs unreachable
+- a volume at `/data/review`, otherwise retained previews are written into the container
+  and disappear when it is recreated, leaving the queue rows with broken images
+- the `IMMICH_DB_*` settings, and network access to Immich's PostgreSQL
+
+The image also needs rebuilding or repulling: `Flask`, `waitress` and `psycopg` are new
+dependencies, and `requests` is gone.
+
 ## Configuration
 
 ### Email
