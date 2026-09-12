@@ -72,10 +72,11 @@ services:
       - REVIEW_DB_PATH=/data/db/review.db
       - REVIEW_RETENTION_DAYS=${REVIEW_RETENTION_DAYS:-30}
 
-    # Reach the Immich database; adjust to match your Immich deployment
-    networks:
-      - default
-      - immich
+    # To reach Immich's database, join the network its postgres container is
+    # on - see "Reaching the Immich database" in README.md.
+    # networks:
+    #   - default
+    #   - immich
 
     restart: unless-stopped
 
@@ -87,12 +88,10 @@ services:
       retries: 3
       start_period: 60s
 
-networks:
-  # The network Immich's postgres container is on. Rename or set
-  # `external: false` if this service runs in the Immich compose project.
-  immich:
-    external: true
-    name: ${IMMICH_NETWORK:-immich_default}
+# networks:
+#   immich:
+#     external: true
+#     name: ${IMMICH_NETWORK:-immich_default}
 
 volumes:
   # Named volume for persistent databases

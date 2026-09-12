@@ -66,6 +66,7 @@ class ReviewStore:
                     resolved_by TEXT,
                     status TEXT NOT NULL DEFAULT 'pending',
                     status_detail TEXT,
+                    delete_mode TEXT,
                     owner_notified INTEGER NOT NULL DEFAULT 0,
                     detected_at TEXT NOT NULL,
                     reviewed_at TEXT,
@@ -73,6 +74,13 @@ class ReviewStore:
                 )
             ''')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_status ON flagged_assets (status, detected_at DESC)')
+
+            # CREATE TABLE IF NOT EXISTS leaves a database made by an older
+            # build without the newer columns.
+            columns = {row['name'] for row in conn.execute('PRAGMA table_info(flagged_assets)')}
+            if 'delete_mode' not in columns:
+                conn.execute('ALTER TABLE flagged_assets ADD COLUMN delete_mode TEXT')
+
             conn.commit()
         finally:
             conn.close()
@@ -124,10 +132,12 @@ class ReviewStore:
                         immich_link = COALESCE(excluded.immich_link, flagged_assets.immich_link),
                         owner_name = COALESCE(excluded.owner_name, flagged_assets.owner_name),
                         owner_email = COALESCE(excluded.owner_email, flagged_assets.owner_email),
-                        resolved_by = excluded.resolved_by,
+                        resolved_by = COALESCE(excluded.resolved_by, flagged_assets.resolved_by),
                         status = ?,
                         status_detail = NULL,
                         reviewed_at = NULL,
+                        owner_notified = 0,
+                        delete_mode = NULL,
                         detected_at = excluded.detected_at
                     RETURNING id
                 ''', (
@@ -209,7 +219,8 @@ class ReviewStore:
         counts['total'] = sum(counts[status] for status in STATUSES)
         return counts
 
-    def set_status(self, item_id, status, detail=None, owner_notified=None, drop_preview=False):
+    def set_status(self, item_id, status, detail=None, owner_notified=None, drop_preview=False,
+                   delete_mode=None):
         """
         Update the review state of an item.
 
@@ -219,6 +230,7 @@ class ReviewStore:
             detail: Human readable outcome detail
             owner_notified: Whether the owner was emailed
             drop_preview: Delete the retained preview (used once content is gone)
+            delete_mode: 'trash' or 'permanent', recording whether this is recoverable
 
         Returns:
             bool: True if a row was updated
@@ -233,6 +245,10 @@ class ReviewStore:
         if owner_notified is not None:
             fields.append('owner_notified = ?')
             params.append(1 if owner_notified else 0)
+
+        if delete_mode is not None:
+            fields.append('delete_mode = ?')
+            params.append(delete_mode)
 
         if drop_preview:
             _remove_file(item.get('redacted_path'))
@@ -289,6 +305,10 @@ class ReviewStore:
                     conn.commit()
 
                 return len(rows)
+            except sqlite3.Error as e:
+                # Raising would kill the watcher thread that calls this.
+                print(f"Failed to purge resolved review items: {e}")
+                return 0
             finally:
                 conn.close()
 

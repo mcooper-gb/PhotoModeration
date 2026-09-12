@@ -42,6 +42,23 @@ IMMICH_PATH_MAP=/data/scan:upload/library
 
 `IMMICH_DB_URL` can be used instead of the individual settings.
 
+### Reaching the Immich database
+
+If Immich runs in its own Compose project, its database is on that project's network and is
+not reachable from this one by default. Uncomment the `networks` blocks in
+`docker-compose.yml` and set `IMMICH_NETWORK` to the network Immich's postgres container is
+on — `docker network ls` shows it, usually `<immich project>_default`:
+
+```dotenv
+IMMICH_NETWORK=immich_default
+```
+
+They ship commented out because Compose refuses to start at all when an external network it
+cannot find is declared, and the rest of the service works without Immich.
+
+If you add this service to Immich's own Compose file instead, it is already on that network
+and nothing needs changing.
+
 ### Give the service its own restricted database role
 
 Do not point it at the `postgres` superuser. Create a role that can read what it needs and

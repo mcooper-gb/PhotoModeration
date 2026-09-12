@@ -69,12 +69,15 @@ class Dashboard:
                 return view(*args, **kwargs)
 
             # An empty configured password would otherwise match an empty
-            # supplied one, leaving the dashboard open to anyone who guesses
-            # the username.
+            # supplied one, leaving the dashboard open to anyone who guesses the
+            # username. Comparison is on bytes because compare_digest raises on
+            # non-ASCII str, and the username comes from the request.
             auth = request.authorization
             if (self.password and auth
-                    and secrets.compare_digest(auth.username or '', self.username)
-                    and secrets.compare_digest(auth.password or '', self.password)):
+                    and secrets.compare_digest((auth.username or '').encode(),
+                                               self.username.encode())
+                    and secrets.compare_digest((auth.password or '').encode(),
+                                               self.password.encode())):
                 return view(*args, **kwargs)
 
             return Response(
@@ -159,7 +162,9 @@ class Dashboard:
 
         redacted_path = item.get('redacted_path')
         if redacted_path and Path(redacted_path).exists():
-            return send_file(redacted_path, mimetype='image/jpeg')
+            # send_file resolves a relative path against the Flask app
+            # directory, not the working directory the path was stored from.
+            return send_file(Path(redacted_path).resolve(), mimetype='image/jpeg')
 
         abort(404)
 
@@ -176,12 +181,14 @@ class Dashboard:
 
         if item.get('media_type') == 'video' and item.get('frame_number') is not None:
             frame_bytes = self._video_frame(source, item['frame_number'])
-            if frame_bytes:
-                return Response(frame_bytes, mimetype='image/jpeg')
+            # Falling through would stream the whole video into an <img> tag.
+            if not frame_bytes:
+                abort(404)
+            return Response(frame_bytes, mimetype='image/jpeg')
 
         if source.exists():
             mimetype = mimetypes.guess_type(source.name)[0] or 'application/octet-stream'
-            return send_file(source, mimetype=mimetype)
+            return send_file(source.resolve(), mimetype=mimetype)
 
         abort(404)
 
@@ -266,7 +273,8 @@ class Dashboard:
         # A trashed asset can still be restored, so it keeps its preview.
         recorded = self.review_store.set_status(
             item_id, STATUS_DELETED, detail,
-            owner_notified=notified, drop_preview=permanent
+            owner_notified=notified, drop_preview=permanent,
+            delete_mode='permanent' if permanent else 'trash'
         )
 
         if not recorded:
