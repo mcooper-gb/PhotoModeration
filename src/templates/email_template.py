@@ -174,30 +174,30 @@ class EmailTemplate:
 
     @staticmethod
     def _generate_actions(res):
-        """Generate the review and Immich links for a detection."""
+        """Generate the review link for a detection."""
         review_link = res.get('review_link')
         immich_link = res.get('immich_link')
 
-        if not review_link and not immich_link:
+        # Immich shows an asset only to the user who owns it, so a link there
+        # denies the moderator on everyone else's upload. The dashboard is the
+        # only place they can actually review it.
+        if review_link:
+            return (
+                f'<div class="actions">'
+                f'<a class="action-button" href="{escape(review_link, quote=True)}">'
+                f'Review (redacted)</a></div>'
+            )
+
+        if not immich_link:
             return ''
 
-        html = '<div class="actions">'
-        if review_link:
-            html += (
-                f'<a class="action-button" href="{escape(review_link, quote=True)}">'
-                f'Review (redacted)</a>'
-            )
-        if immich_link:
-            html += (
-                f'<a class="action-button action-secondary" href="{escape(immich_link, quote=True)}">'
-                f'Open in Immich</a>'
-            )
-        html += '</div>'
-
-        if immich_link:
-            html += '<p class="warning">The Immich link shows the original, unredacted asset.</p>'
-
-        return html
+        return (
+            f'<div class="actions">'
+            f'<a class="action-button action-secondary" href="{escape(immich_link, quote=True)}">'
+            f'Open in Immich</a></div>'
+            f'<p class="warning">The dashboard is disabled, so this links to the unredacted '
+            f'original in Immich, which only its owner can open.</p>'
+        )
 
     @staticmethod
     def _generate_detection_labels(detections):
