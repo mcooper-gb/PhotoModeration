@@ -66,8 +66,12 @@ def _send_batch(batch, notifier):
     """
     print(f"\nSending batch of {len(batch)} notifications...")
 
-    if notifier.send_notification(batch):
-        cleanup_censored_files(batch)
+    if not notifier.send_notification(batch):
+        print("  Notification failed; the detections remain in the review queue")
+
+    # Cleaned up either way: there is no retry, and the dashboard holds its own
+    # copy, so keeping these would leave explicit images on disk with no reader.
+    cleanup_censored_files(batch)
 
 
 def build_immich_database():

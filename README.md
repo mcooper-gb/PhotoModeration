@@ -12,7 +12,7 @@ does, so the Immich database and library stay consistent.
 3. **Blur Redaction** - Detected regions are blurred (or pixelated) rather than covered with a black box
 4. **Immich Lookup** - Matches each file to its Immich asset and the user who uploaded it
    (one admin covers every user; no per-user API keys)
-5. **Email Notifications** - Sends batched alerts with the redacted preview, the uploader, a review link and an Immich link
+5. **Email Notifications** - Sends batched alerts with the redacted preview, the uploader and a link to the dashboard review page
 6. **Moderation Dashboard** - A web queue of every flagged item, redacted by default, with reveal, keep and delete actions
 7. **Safe Deletion** - Applies Immich's own delete (trash by default), optionally emailing the uploader
 8. **Duplicate Prevention** - Tracks processed files in SQLite to avoid re-scanning
@@ -203,7 +203,9 @@ scans, blurs and emails, but cannot name the uploader or delete assets.
 ### Dashboard
 
 - `DASHBOARD_ENABLED` - Serve the dashboard (default: true)
-- `DASHBOARD_HOST` / `DASHBOARD_PORT` - Bind address and port (default: 0.0.0.0:8080)
+- `DASHBOARD_HOST` / `DASHBOARD_PORT` - Bind address and port (default: 0.0.0.0:8080).
+  Compose publishes `DASHBOARD_PORT` on the host as well, so it is the same port inside
+  and out
 - `DASHBOARD_URL` - Public base URL used in email links
 - `DASHBOARD_USER` / `DASHBOARD_PASS` - Optional HTTP basic auth (setting the user without a password is refused at startup)
 - `DASHBOARD_ALLOW_REVEAL` - Allow viewing unredacted originals (default: true)

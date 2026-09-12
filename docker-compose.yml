@@ -5,14 +5,15 @@ services:
     build: .
     container_name: photo-moderation
     volumes:
-      # Immich library to scan for new media files (read-only: deletions go
-      # through the Immich API, never the file system)
+      # Immich library to scan (read-only: this service never deletes a file,
+      # Immich's own jobs do)
       - ${IMMICH_LIBRARY:-./images}:/data/scan:ro
 
       # Persistent database to track processed files and the review queue
       - photo-moderation-db:/data/db
 
-      # Redacted images pending notification (cleaned after the email is sent)
+      # Redacted previews waiting to be emailed (removed once the batch email
+      # has been attempted; the dashboard keeps its own copy)
       - ./censored:/data/censored
 
       # Redacted previews retained for the moderation dashboard
@@ -22,8 +23,8 @@ services:
       - nudenet-models:/root/.NudeNet
 
     ports:
-      # Moderation dashboard
-      - "${DASHBOARD_PORT:-8080}:8080"
+      # Moderation dashboard, on the same port inside and out
+      - "${DASHBOARD_PORT:-8080}:${DASHBOARD_PORT:-8080}"
 
     environment:
       # Email notification settings
@@ -62,6 +63,7 @@ services:
 
       # Moderation dashboard
       - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-true}
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
       - DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:8080}
       - DASHBOARD_USER=${DASHBOARD_USER:-}
       - DASHBOARD_PASS=${DASHBOARD_PASS:-}
@@ -79,8 +81,7 @@ services:
 
     # Health check hits the dashboard, which also reports the review queue
     healthcheck:
-      test: ["CMD", "python", "-c",
-             "import urllib.request,os,sys; sys.exit(0) if os.getenv('DASHBOARD_ENABLED','true').lower() in ('0','false','no','off') else urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      test: ["CMD", "python", "healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 3

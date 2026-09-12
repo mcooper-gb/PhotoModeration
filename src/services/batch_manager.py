@@ -62,8 +62,13 @@ class BatchManager:
 
         print(f"\nSending batch of {len(batch_to_send)} notifications...")
 
-        if self.notifier.send_notification(batch_to_send):
-            cleanup_censored_files(batch_to_send)
+        if not self.notifier.send_notification(batch_to_send):
+            print("  Notification failed; the detections remain in the review queue")
+
+        # Cleaned up either way: there is no retry, and the dashboard holds its
+        # own copy, so keeping these would leave explicit images on disk with
+        # no reader.
+        cleanup_censored_files(batch_to_send)
 
     def flush(self):
         """Send any remaining items in the batch."""
