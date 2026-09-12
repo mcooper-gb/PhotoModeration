@@ -53,20 +53,17 @@ class Notifier:
         if not results:
             return False
 
-        # Enrich results with EXIF data
         enriched_results = []
         for res in results:
             enriched_res = res.copy()
             enriched_res['exif_data'] = self.exif_extractor.extract_metadata(res['original_path'])
             enriched_results.append(enriched_res)
 
-        # Create email message
         msg = MIMEMultipart('related')
         msg['From'] = self.smtp_user
         msg['To'] = self.recipient
         msg['Subject'] = f"Photo Moderation Alert: {len(results)} files found"
 
-        # Generate HTML content
         html_content = EmailTemplate.generate_html(enriched_results, self.dashboard_url)
         msg.attach(MIMEText(html_content, 'html'))
 

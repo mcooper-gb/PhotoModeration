@@ -49,7 +49,6 @@ def initial_scan(scanner, moderator, notifier, batch_size, immich=None, review_s
         finally:
             processed_count += 1
 
-    # Send the remaining batch
     if batch:
         _send_batch(batch, notifier)
 
@@ -183,7 +182,6 @@ def main():
     print(f"Confidence threshold: {Config.CONFIDENCE_THRESHOLD}")
     print(f"Redaction: {Config.REDACTION_MODE} (strength {Config.REDACTION_STRENGTH})")
 
-    # Initialize components
     scanner = Scanner(Config.SCAN_DIR, Config.DB_PATH)
     moderator = Moderator(
         Config.EXPLICIT_LABELS,
@@ -214,10 +212,8 @@ def main():
     dashboard_url = Config.DASHBOARD_URL if Config.DASHBOARD_ENABLED else None
     start_dashboard(review_store, immich, notifier, moderator)
 
-    # Run an initial scan of existing files
     initial_scan(scanner, moderator, notifier, Config.BATCH_SIZE, immich, review_store, dashboard_url)
 
-    # Start watching for new files
     print("\n=== Starting file system watcher ===")
     watcher = MediaWatcher(
         Config.SCAN_DIR,

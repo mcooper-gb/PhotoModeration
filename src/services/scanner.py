@@ -33,7 +33,6 @@ class Scanner:
         try:
             stats = os.stat(file_path)
         except (FileNotFoundError, OSError):
-            # File doesn't exist or can't be accessed
             raise FileNotFoundError(f"Cannot access file: {file_path}")
 
         mtime = stats.st_mtime

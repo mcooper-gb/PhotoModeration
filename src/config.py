@@ -35,7 +35,7 @@ class Config:
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
 
     # --- Redaction -------------------------------------------------------
-    # blur (default), pixelate or box (the original black rectangle).
+    # blur (default), pixelate or box (a solid black rectangle).
     REDACTION_MODE = os.getenv('REDACTION_MODE', 'blur').strip().lower()
     REDACTION_STRENGTH = int(os.getenv('REDACTION_STRENGTH', 60))
     REDACTION_PADDING = int(os.getenv('REDACTION_PADDING', 8))

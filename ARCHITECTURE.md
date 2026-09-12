@@ -7,6 +7,7 @@ This document describes the refactored architecture of the Photo Moderation Serv
 ```
 PhotoModeration/
 ├── app.py                      # Main entry point
+├── healthcheck.py              # Container health check
 ├── requirements.txt            # Python dependencies
 ├── Dockerfile                  # Docker configuration
 ├── docker-compose.yml          # Docker Compose configuration
@@ -109,7 +110,7 @@ Manages application configuration from environment variables. Validates required
 - Monitors directory for new files
 - Triggers processing pipeline for new media
 - Batches notifications for efficiency
-- Manages cleanup of temporary censored files
+- Applies the review retention window periodically while the service runs
 
 ### src/utils/
 

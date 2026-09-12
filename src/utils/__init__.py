@@ -1,4 +1,3 @@
-# Utilities module
 """Utility functions for the Photo Moderation Service."""
 from pathlib import Path
 
@@ -57,7 +56,6 @@ def add_censored_results_to_batch(original_path, censored_result, detections, ba
     context = dict(context or {})
 
     if isinstance(censored_result, list):
-        # Video returns one entry per redacted frame
         for frame in censored_result:
             frame_context = dict(context)
             frame_context.update({
@@ -66,7 +64,6 @@ def add_censored_results_to_batch(original_path, censored_result, detections, ba
             })
             batch.append(create_batch_item(original_path, frame.get('path'), detections, frame_context))
     else:
-        # Image returns single Path
         batch.append(create_batch_item(original_path, censored_result, detections, context))
 
 

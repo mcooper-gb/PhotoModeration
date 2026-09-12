@@ -34,13 +34,11 @@ class BatchManager:
         with self.lock:
             self.batch.append(item)
 
-            # Cancel existing timer if any
             self._cancel_timer()
 
             if len(self.batch) >= self.batch_size:
                 send_now = True
             elif self.batch_timeout > 0:
-                # Start timer for incomplete batch
                 self.batch_timer = threading.Timer(self.batch_timeout, self._on_timeout)
                 self.batch_timer.start()
 
@@ -56,7 +54,6 @@ class BatchManager:
             if not self.batch:
                 return
 
-            # Take ownership of current batch
             batch_to_send = self.batch
             self.batch = []
 

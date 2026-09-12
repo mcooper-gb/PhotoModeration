@@ -129,22 +129,17 @@ class EmailTemplate:
         html += f'<div class="file-header">FILE #{idx}</div>'
         html += f'<p><span class="info-label">Path:</span> {escape(str(res["original_path"]))}</p>'
 
-        # Add the Immich uploader, when the asset could be identified
         html += EmailTemplate._generate_owner_info(res)
 
-        # Add frame details for video detections
         if res.get('frame_number') is not None:
             timestamp = res.get('frame_timestamp')
             position = f" (t={timestamp:.1f}s)" if isinstance(timestamp, (int, float)) else ''
             html += f'<p><span class="info-label">Frame:</span> {res["frame_number"]}{position}</p>'
 
-        # Add detection labels
         html += EmailTemplate._generate_detection_labels(res.get('detections', []))
 
-        # Add EXIF data
         html += EmailTemplate._generate_exif_data(res.get('exif_data'))
 
-        # Add inline redacted image
         censored_path = res.get('censored_path')
         if censored_path and Path(censored_path).exists():
             image_cid = f"image{idx}"
@@ -202,25 +197,21 @@ class EmailTemplate:
     @staticmethod
     def _generate_detection_labels(detections):
         """Generate HTML for detection labels with confidence scores."""
-        # Collect detections with their scores
         label_scores = {}
 
+        # Video detections arrive keyed by frame number, image detections flat.
         if isinstance(detections, dict):
-            # Handle video detections (dict of frame_num: detections)
             for frame_detections in detections.values():
                 if isinstance(frame_detections, list):
                     for det in frame_detections:
                         label = det.get('class', 'Unknown')
                         score = det.get('score', 0)
-                        # Keep the highest score for each label
                         if label not in label_scores or score > label_scores[label]:
                             label_scores[label] = score
         else:
-            # Handle image detections (list)
             for det in detections:
                 label = det.get('class', 'Unknown')
                 score = det.get('score', 0)
-                # Keep the highest score for each label
                 if label not in label_scores or score > label_scores[label]:
                     label_scores[label] = score
 

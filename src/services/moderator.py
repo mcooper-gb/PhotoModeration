@@ -55,7 +55,6 @@ class Moderator:
         original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 1.0
 
-        # Calculate 480p dimensions
         target_height = 480
         if original_height > target_height:
             scale_factor = target_height / original_height
@@ -65,13 +64,13 @@ class Moderator:
             target_height = original_height
             scale_factor = 1.0
 
-        # Try codec-level scaling (option 3)
+        # Decoding at the target size is cheaper than decoding full frames
+        # and resizing, but not every codec honours the request.
         use_manual_scaling = False
         if scale_factor < 1.0:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_height)
 
-            # Check if codec actually applied the scaling
             actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -86,7 +85,6 @@ class Moderator:
         else:
             width, height = original_width, original_height
 
-        # Background subtraction for scene detection
         back_sub = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
 
         frame_interval = max(1, int(fps * 2))  # 2 seconds between samples
@@ -107,11 +105,11 @@ class Moderator:
             if not ret:
                 break
 
-            # Apply background subtraction to detect scene changes
             fg_mask = back_sub.apply(frame)
             change_ratio = cv2.countNonZero(fg_mask) / (width * height)
 
-            # If we're in an explicit scene, wait for scene change
+            # Wait for the picture to change, so one explicit scene is not
+            # reported as several detections.
             if in_explicit_scene:
                 if change_ratio > scene_change_threshold:
                     print(f"  Scene change detected at frame {frame_count} ({change_ratio:.2%} change)")
@@ -119,17 +117,16 @@ class Moderator:
                 frame_count += 1
                 continue
 
-            # Only process frames at the sampling interval
             if frame_count % frame_interval == 0:
                 timestamp = frame_count / fps
 
-                # Downscale for detection if needed (option 2 fallback)
+                # The codec refused to scale, so do it here.
                 if use_manual_scaling:
                     frame_for_detection = cv2.resize(frame, (target_width, target_height))
                 else:
                     frame_for_detection = frame
 
-                # Save frame temporarily and run detection
+                # NudeDetector reads from a path, not an array.
                 with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
                     tmp_path = tmp.name
                     cv2.imwrite(tmp_path, frame_for_detection)
@@ -137,7 +134,6 @@ class Moderator:
                 try:
                     frame_detections = self.detector.detect(tmp_path)
 
-                    # Check if any explicit content detected above confidence threshold
                     has_explicit = any(
                         det.get('class') in self.explicit_labels and
                         det.get('score', 0) >= self.confidence_threshold

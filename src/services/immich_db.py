@@ -278,17 +278,6 @@ class ImmichDatabase:
 
         return self._trash_days
 
-    def get_asset_status(self, asset_id):
-        """Return the current status of an asset, or None if it is gone."""
-        self._require_schema()
-
-        with self._connect() as conn:
-            row = conn.execute(
-                f'SELECT status FROM "{self.asset_table}" WHERE id = %s', (asset_id,)
-            ).fetchone()
-
-        return row['status'] if row else None
-
     def to_immich_path(self, file_path):
         """Translate a locally mounted path into the path Immich stores."""
         path_str = str(file_path)

@@ -44,20 +44,17 @@ class MediaFileHandler(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
 
-        # Check if it's a supported media file
         if file_path.suffix.lower() not in self.supported_extensions:
             return
 
-        # Check if file still exists (may have been moved/deleted)
+        # A file can be moved or deleted between the event and this check.
         if not file_path.exists():
             return
 
         try:
-            # Check if already processed
             if not self.scanner.is_new_or_modified(str(file_path)):
                 return
         except FileNotFoundError:
-            # File was deleted/moved between detection and check
             return
 
         print(f"\nNew file detected: {file_path.name}")
@@ -122,7 +119,6 @@ class MediaWatcher:
         self.observer.stop()
         self.observer.join()
 
-        # Send any remaining batch items
         self.event_handler.batch_manager.flush()
         print("Watcher stopped.")
 
