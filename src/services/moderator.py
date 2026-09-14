@@ -51,39 +51,13 @@ class Moderator:
         if not cap.isOpened():
             return {}
 
-        original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 1.0
 
+        # Frames are downscaled once on read and reused for both the background
+        # subtractor and the detector. Asking the decoder to scale is not an option:
+        # H.264 and HEVC have no reduced-resolution decode path, and
+        # CAP_PROP_FRAME_WIDTH applies to capture devices rather than files.
         target_height = 480
-        if original_height > target_height:
-            scale_factor = target_height / original_height
-            target_width = int(original_width * scale_factor)
-        else:
-            target_width = original_width
-            target_height = original_height
-            scale_factor = 1.0
-
-        # Decoding at the target size is cheaper than decoding full frames
-        # and resizing, but not every codec honours the request.
-        use_manual_scaling = False
-        if scale_factor < 1.0:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_height)
-
-            actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-            if actual_width == target_width and actual_height == target_height:
-                print(
-                    f"Codec-level scaling successful: {original_width}x{original_height} -> {target_width}x{target_height}")
-                width, height = target_width, target_height
-            else:
-                print(f"Codec doesn't support scaling, will use manual downscaling")
-                use_manual_scaling = True
-                width, height = original_width, original_height
-        else:
-            width, height = original_width, original_height
 
         back_sub = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
 
@@ -97,7 +71,6 @@ class Moderator:
         scene_change_threshold = 0.3  # 30% of frame pixels changed
 
         print(f"\n=== Processing video: {Path(video_path).name} ===")
-        print(f"Resolution: {width}x{height}, FPS: {fps:.2f}")
         print(f"Sampling every {frame_interval} frames (~2 seconds)")
 
         while cap.isOpened() and detection_count < max_detections:
@@ -105,8 +78,19 @@ class Moderator:
             if not ret:
                 break
 
-            fg_mask = back_sub.apply(frame)
-            change_ratio = cv2.countNonZero(fg_mask) / (width * height)
+            # Downscale before the subtractor: this runs on every frame, and its
+            # cost scales with the pixel count.
+            frame_for_detection = self._downscale(frame, target_height)
+            detect_height, detect_width = frame_for_detection.shape[:2]
+
+            if frame_count == 0:
+                # Off the decoded frame, not the container metadata: the two
+                # disagree whenever rotation metadata is present.
+                print(f"Resolution: {frame.shape[1]}x{frame.shape[0]} decoded, "
+                      f"{detect_width}x{detect_height} for detection, FPS: {fps:.2f}")
+
+            fg_mask = back_sub.apply(frame_for_detection)
+            change_ratio = cv2.countNonZero(fg_mask) / (detect_width * detect_height)
 
             # Wait for the picture to change, so one explicit scene is not
             # reported as several detections.
@@ -119,12 +103,6 @@ class Moderator:
 
             if frame_count % frame_interval == 0:
                 timestamp = frame_count / fps
-
-                # The codec refused to scale, so do it here.
-                if use_manual_scaling:
-                    frame_for_detection = cv2.resize(frame, (target_width, target_height))
-                else:
-                    frame_for_detection = frame
 
                 # NudeDetector reads from a path, not an array.
                 with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
@@ -142,12 +120,13 @@ class Moderator:
 
                     if has_explicit:
                         detection_count += 1
-                        # _censor_video re-reads frames at full resolution.
-                        detect_height, detect_width = frame_for_detection.shape[:2]
+                        # _censor_video re-reads frames at full resolution, so the
+                        # boxes are mapped back off the frame that was decoded.
+                        frame_height, frame_width = frame.shape[:2]
                         detections[frame_count] = self._rescale_detections(
                             frame_detections,
-                            original_width / detect_width if detect_width else 1.0,
-                            original_height / detect_height if detect_height else 1.0
+                            frame_width / detect_width if detect_width else 1.0,
+                            frame_height / detect_height if detect_height else 1.0
                         )
                         print(f"  Detection {detection_count}/5 at frame {frame_count} (t={timestamp:.1f}s)")
                         in_explicit_scene = True
@@ -159,6 +138,17 @@ class Moderator:
         cap.release()
         print(f"Video processing complete: {detection_count} explicit frames found")
         return detections
+
+    @staticmethod
+    def _downscale(frame, target_height):
+        """Shrink a frame to target_height, preserving aspect ratio."""
+        height, width = frame.shape[:2]
+        if height <= target_height:
+            return frame
+
+        scale = target_height / height
+        return cv2.resize(frame, (max(1, int(width * scale)), target_height),
+                          interpolation=cv2.INTER_AREA)
 
     @staticmethod
     def _rescale_detections(detections, x_scale, y_scale):
