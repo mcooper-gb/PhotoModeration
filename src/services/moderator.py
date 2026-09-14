@@ -51,8 +51,6 @@ class Moderator:
         if not cap.isOpened():
             return {}
 
-        original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 1.0
 
         # Frames are downscaled once on read and reused for both the background
@@ -73,7 +71,6 @@ class Moderator:
         scene_change_threshold = 0.3  # 30% of frame pixels changed
 
         print(f"\n=== Processing video: {Path(video_path).name} ===")
-        print(f"Resolution: {original_width}x{original_height}, FPS: {fps:.2f}")
         print(f"Sampling every {frame_interval} frames (~2 seconds)")
 
         while cap.isOpened() and detection_count < max_detections:
@@ -85,6 +82,12 @@ class Moderator:
             # cost scales with the pixel count.
             frame_for_detection = self._downscale(frame, target_height)
             detect_height, detect_width = frame_for_detection.shape[:2]
+
+            if frame_count == 0:
+                # Off the decoded frame, not the container metadata: the two
+                # disagree whenever rotation metadata is present.
+                print(f"Resolution: {frame.shape[1]}x{frame.shape[0]} decoded, "
+                      f"{detect_width}x{detect_height} for detection, FPS: {fps:.2f}")
 
             fg_mask = back_sub.apply(frame_for_detection)
             change_ratio = cv2.countNonZero(fg_mask) / (detect_width * detect_height)
