@@ -1,10 +1,17 @@
-nudenet>=3.4.2
-opencv-python
-python-dotenv
-onnxruntime
-numpy
-watchdog
-Pillow
-Flask
-waitress
-psycopg[binary]
+# Pinned so a rebuild produces the same image, and so a vulnerability report
+# names a version this file can be checked against. Unpinned, the contents
+# depended on the day the image happened to be built.
+#
+# opencv-python-headless is what nudenet itself depends on; naming the GUI
+# build here as well meant the image carried two complete copies of OpenCV,
+# and the GUI one was the only reason the image needed GL and X11 libraries.
+nudenet==3.4.2
+opencv-python-headless==5.0.0.93
+numpy==2.5.3
+onnxruntime==1.30.0
+Pillow==12.3.0
+Flask==3.1.3
+waitress==3.0.2
+psycopg[binary]==3.3.5
+python-dotenv==1.2.3
+watchdog==6.0.0

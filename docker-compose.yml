@@ -19,9 +19,6 @@ services:
       # Redacted previews retained for the moderation dashboard
       - photo-moderation-review:/data/review
 
-      # NudeNet model cache (persists models between restarts)
-      - nudenet-models:/root/.NudeNet
-
     ports:
       # Moderation dashboard, on the same port inside and out
       - "${DASHBOARD_PORT:-8080}:${DASHBOARD_PORT:-8080}"
@@ -99,6 +96,3 @@ volumes:
 
   # Redacted previews retained for the dashboard
   photo-moderation-review:
-
-  # Named volume for NudeNet models (downloaded once, reused)
-  nudenet-models:

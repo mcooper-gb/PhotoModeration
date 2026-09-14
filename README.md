@@ -239,6 +239,33 @@ If you kept your own `docker-compose.yml`, add:
 The image also needs rebuilding or repulling: `Flask`, `waitress` and `psycopg` are new
 dependencies, and `requests` is gone.
 
+The `nudenet-models` volume at `/root/.NudeNet` can be dropped. NudeNet ships its model
+inside the Python package, so nothing was ever downloaded into it.
+
+### The container no longer runs as root
+
+From 1.2.1 the service runs as uid/gid `10001` instead of root, so that a malicious photo
+that finds a bug in the image or video decoder does not get root inside the container.
+The decoders are native code and every file the service reads is untrusted, so this is
+worth the one-time upgrade step below.
+
+Docker stamps that ownership onto a volume only when it creates it, so a **fresh install
+needs nothing**. Volumes created by an earlier version are owned by root, and the service
+cannot write to them until you hand them over. With the stack stopped:
+
+```bash
+docker compose run --rm --user root photo-moderation \
+    chown -R 10001:10001 /data/db /data/review /data/censored
+```
+
+If you bind-mount rather than use the named volumes, chown the host directories instead —
+`sudo chown -R 10001:10001 ./censored`. The scan directory is mounted read-only and needs
+no change.
+
+Symptoms of skipping this are `Permission denied` on startup or an empty dashboard queue
+whose previews never appear. To stay on root instead, set `user: root` on the service in
+`docker-compose.yml`; the image still works, it just gives up the hardening.
+
 ## Configuration
 
 ### Email

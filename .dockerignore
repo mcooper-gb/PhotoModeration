@@ -33,6 +33,12 @@ images/
 censored/
 data/
 models/
+review_images/
+
+# Databases, so a local scan history is never copied into the image
+*.db
+*.sqlite
+*.sqlite3
 
 # Environment
 .env
