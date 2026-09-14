@@ -42,7 +42,6 @@ models/
 
 # Logs
 *.log
-cves.txt
 
 # Test files
 test_*.py
