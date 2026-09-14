@@ -4,7 +4,7 @@ FROM python:3.14-slim-trixie
 LABEL org.opencontainers.image.source="https://github.com/mcooper-gb/PhotoModeration"
 LABEL org.opencontainers.image.documentation="https://github.com/mcooper-gb/PhotoModeration"
 LABEL org.opencontainers.image.url="https://hub.docker.com/r/mcoopergb/photo-moderation"
-LABEL org.opencontainers.image.version="1.2.1"
+LABEL org.opencontainers.image.version="1.2.2"
 LABEL org.opencontainers.image.title="Photo Moderation"
 LABEL org.opencontainers.image.description="Automated media content moderation service using NudeNet, with Immich integration and a moderator dashboard"
 LABEL org.opencontainers.image.vendor="Mark Cooper"
