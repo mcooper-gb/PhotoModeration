@@ -61,3 +61,6 @@ Thumbs.db
 
 # Output files
 .output.txt
+
+#Claude files
+/.claude/
