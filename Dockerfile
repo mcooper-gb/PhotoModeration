@@ -1,4 +1,4 @@
-FROM python:3.13-slim-trixie
+FROM python:3.14-slim-trixie
 
 # Image metadata (appears in TrueNAS and other container managers)
 LABEL org.opencontainers.image.source="https://github.com/mcooper-gb/PhotoModeration"

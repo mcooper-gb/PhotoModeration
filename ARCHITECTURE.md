@@ -230,7 +230,7 @@ See `requirements.txt` for full list. Key dependencies:
 ## Docker Deployment
 
 The application is containerized with Docker:
-- Base image: `python:3.13-slim-trixie`, which carries no build toolchain
+- Base image: `python:3.14-slim-trixie`, which carries no build toolchain
 - pip, setuptools and wheel are removed after the dependencies are installed, so there is
   no package manager inside the running container to debug with
 - Volumes for data persistence, including retained dashboard previews
