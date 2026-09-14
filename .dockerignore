@@ -10,10 +10,12 @@ build/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
 # IDE
+.claude/
 .vscode/
 .idea/
 *.swp
@@ -40,6 +42,7 @@ models/
 
 # Logs
 *.log
+cves.txt
 
 # Test files
 test_*.py

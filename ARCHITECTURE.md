@@ -219,7 +219,7 @@ service still scans, blurs and emails; without the dashboard the queue is simply
 
 See `requirements.txt` for full list. Key dependencies:
 - **nudenet**: AI model for content detection
-- **opencv-python**: Image and video processing, blur and mosaic redaction
+- **opencv-python-headless**: Image and video processing, blur and mosaic redaction
 - **Pillow**: EXIF data extraction
 - **watchdog**: File system monitoring
 - **psycopg**: Immich database access for admin moderation
@@ -230,7 +230,9 @@ See `requirements.txt` for full list. Key dependencies:
 ## Docker Deployment
 
 The application is containerized with Docker:
-- Base image: `python:3.13-bookworm`
+- Base image: `python:3.13-slim-trixie`, which carries no build toolchain
+- pip, setuptools and wheel are removed after the dependencies are installed, so there is
+  no package manager inside the running container to debug with
 - Volumes for data persistence, including retained dashboard previews
 - The Immich library is mounted read-only; no file is ever deleted by this service
 - Needs network access to Immich's PostgreSQL, using a role restricted to the two columns

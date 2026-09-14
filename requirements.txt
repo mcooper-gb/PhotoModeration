@@ -1,10 +1,10 @@
 nudenet>=3.4.2
-opencv-python
-python-dotenv
+opencv-python-headless
+python-dotenv>=1.2.2
 onnxruntime
 numpy
 watchdog
-Pillow
+Pillow>=12.3.0
 Flask
 waitress
 psycopg[binary]

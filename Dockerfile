@@ -1,25 +1,21 @@
-FROM python:3.13-bookworm
+FROM python:3.13-slim-trixie
 
 # Image metadata (appears in TrueNAS and other container managers)
 LABEL org.opencontainers.image.source="https://github.com/mcooper-gb/PhotoModeration"
 LABEL org.opencontainers.image.documentation="https://github.com/mcooper-gb/PhotoModeration"
 LABEL org.opencontainers.image.url="https://hub.docker.com/r/mcoopergb/photo-moderation"
-LABEL org.opencontainers.image.version="1.2.0"
+LABEL org.opencontainers.image.version="1.2.1"
 LABEL org.opencontainers.image.title="Photo Moderation"
 LABEL org.opencontainers.image.description="Automated media content moderation service using NudeNet, with Immich integration and a moderator dashboard"
 LABEL org.opencontainers.image.vendor="Mark Cooper"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Install system dependencies for OpenCV
-RUN apt-get clean && \
-    apt-get update --fix-missing && \
+# Apply the base image's outstanding security updates, then add libgomp.so.1 for
+# onnxruntime. Headless OpenCV needs no X11 or GL libraries.
+RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgl1-mesa-glx && \
+    libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -28,8 +24,17 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies, then strip the toolchain the runtime never uses: setuptools
+# and wheel are build-time only (nothing on the inference path imports them), and pip
+# itself is removed last because its vendored copies of msgpack and setuptools are the
+# only remaining source of HIGH findings in the image.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip uninstall -y setuptools wheel && \
+    rm -rf /usr/local/lib/python3.*/site-packages/pip \
+           /usr/local/lib/python3.*/site-packages/pip-*.dist-info \
+           /usr/local/lib/python3.*/ensurepip \
+           /usr/local/bin/pip /usr/local/bin/pip3*
 
 # Copy application code
 COPY . .
