@@ -1,6 +1,7 @@
 # Test image and video files
 /images/
 /censored/
+/review_images/
 /data/
 
 # Python

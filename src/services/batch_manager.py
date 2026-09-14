@@ -34,13 +34,11 @@ class BatchManager:
         with self.lock:
             self.batch.append(item)
 
-            # Cancel existing timer if any
             self._cancel_timer()
 
             if len(self.batch) >= self.batch_size:
                 send_now = True
             elif self.batch_timeout > 0:
-                # Start timer for incomplete batch
                 self.batch_timer = threading.Timer(self.batch_timeout, self._on_timeout)
                 self.batch_timer.start()
 
@@ -56,14 +54,18 @@ class BatchManager:
             if not self.batch:
                 return
 
-            # Take ownership of current batch
             batch_to_send = self.batch
             self.batch = []
 
         print(f"\nSending batch of {len(batch_to_send)} notifications...")
 
-        if self.notifier.send_notification(batch_to_send):
-            cleanup_censored_files(batch_to_send)
+        if not self.notifier.send_notification(batch_to_send):
+            print("  Notification failed; the detections remain in the review queue")
+
+        # Cleaned up either way: there is no retry, and the dashboard holds its
+        # own copy, so keeping these would leave explicit images on disk with
+        # no reader.
+        cleanup_censored_files(batch_to_send)
 
     def flush(self):
         """Send any remaining items in the batch."""

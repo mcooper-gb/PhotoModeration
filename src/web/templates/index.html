@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Moderation queue{% endblock %}
+
+{% block content %}
+<section class="summary">
+    <a class="stat {{ 'active' if status == 'pending' }}" href="{{ url_for('index', status='pending') }}">
+        <span class="stat-value">{{ counts.pending }}</span>
+        <span class="stat-label">Pending</span>
+    </a>
+    <a class="stat {{ 'active' if status == 'kept' }}" href="{{ url_for('index', status='kept') }}">
+        <span class="stat-value">{{ counts.kept }}</span>
+        <span class="stat-label">Kept</span>
+    </a>
+    <a class="stat {{ 'active' if status == 'deleted' }}" href="{{ url_for('index', status='deleted') }}">
+        <span class="stat-value">{{ counts.deleted }}</span>
+        <span class="stat-label">Deleted</span>
+    </a>
+    <a class="stat {{ 'active' if status == 'error' }}" href="{{ url_for('index', status='error') }}">
+        <span class="stat-value">{{ counts.error }}</span>
+        <span class="stat-label">Failed</span>
+    </a>
+    <a class="stat {{ 'active' if not status }}" href="{{ url_for('index', status='all') }}">
+        <span class="stat-value">{{ counts.total }}</span>
+        <span class="stat-label">All</span>
+    </a>
+</section>
+
+<form class="search" method="get" action="{{ url_for('index') }}">
+    <input type="hidden" name="status" value="{{ status or 'all' }}">
+    <input type="search" name="q" value="{{ search }}" placeholder="Search file name or uploader">
+    <button type="submit">Search</button>
+</form>
+
+{% if not items %}
+    <p class="empty">Nothing to review here.</p>
+{% else %}
+<div class="grid">
+    {% for item in items %}
+    <article class="card">
+        <a href="{{ url_for('detail', item_id=item.id) }}">
+            <img class="thumb" src="{{ url_for('preview', item_id=item.id) }}"
+                 alt="Redacted preview of {{ item.file_name }}" loading="lazy">
+        </a>
+        <div class="card-body">
+            <h2 class="card-title" title="{{ item.original_path }}">{{ item.file_name }}</h2>
+            <p class="meta">
+                <span class="badge badge-{{ item.status }}">{{ status_labels[item.status] }}</span>
+                {% if item.media_type == 'video' and item.frame_number is not none %}
+                    <span class="badge badge-frame">frame {{ item.frame_number }}</span>
+                {% endif %}
+            </p>
+            <p class="meta">
+                Uploader:
+                {% if item.owner_name or item.owner_email %}
+                    {{ item.owner_name or item.owner_email }}
+                {% else %}
+                    <em>unknown</em>
+                {% endif %}
+            </p>
+            <p class="meta labels">
+                {% for label in item.labels %}<span class="label">{{ label }}</span>{% endfor %}
+            </p>
+            <p class="meta">Flagged {{ item.detected_at[:19].replace('T', ' ') }}</p>
+            <a class="button" href="{{ url_for('detail', item_id=item.id) }}">Review</a>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+
+<nav class="pager">
+    {% if page > 1 %}
+        <a href="{{ url_for('index', status=status or 'all', q=search, page=page - 1) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ page }}</span>
+    {% if has_next %}
+        <a href="{{ url_for('index', status=status or 'all', q=search, page=page + 1) }}">Next</a>
+    {% endif %}
+</nav>
+{% endif %}
+{% endblock %}

@@ -28,11 +28,9 @@ class ExifExtractor:
 
             metadata = {}
 
-            # Extract basic EXIF data
             for tag_id, value in exif_data.items():
                 tag = TAGS.get(tag_id, tag_id)
 
-                # Get date taken
                 if tag == 'DateTimeOriginal' or tag == 'DateTime':
                     try:
                         metadata['date_taken'] = datetime.strptime(
@@ -41,14 +39,12 @@ class ExifExtractor:
                     except:
                         metadata['date_taken'] = str(value)
 
-                # Get GPS data
                 elif tag == 'GPSInfo':
                     gps_data = {}
                     for gps_tag_id in value:
                         gps_tag = GPSTAGS.get(gps_tag_id, gps_tag_id)
                         gps_data[gps_tag] = value[gps_tag_id]
 
-                    # Convert GPS to decimal coordinates
                     lat = ExifExtractor._convert_gps_to_decimal(
                         gps_data.get('GPSLatitude'),
                         gps_data.get('GPSLatitudeRef')

@@ -5,17 +5,26 @@ services:
     build: .
     container_name: photo-moderation
     volumes:
-      # Directory to scan for new media files
-      - ./images:/data/scan
+      # Immich library to scan (read-only: this service never deletes a file,
+      # Immich's own jobs do)
+      - ${IMMICH_LIBRARY:-./images}:/data/scan:ro
 
-      # Persistent database to track processed files
+      # Persistent database to track processed files and the review queue
       - photo-moderation-db:/data/db
 
-      # Censored images output (temporary - cleaned after notification)
+      # Redacted previews waiting to be emailed (removed once the batch email
+      # has been attempted; the dashboard keeps its own copy)
       - ./censored:/data/censored
+
+      # Redacted previews retained for the moderation dashboard
+      - photo-moderation-review:/data/review
 
       # NudeNet model cache (persists models between restarts)
       - nudenet-models:/root/.NudeNet
+
+    ports:
+      # Moderation dashboard, on the same port inside and out
+      - "${DASHBOARD_PORT:-8080}:${DASHBOARD_PORT:-8080}"
 
     environment:
       # Email notification settings
@@ -27,22 +36,69 @@ services:
 
       # Application settings
       - BATCH_SIZE=${BATCH_SIZE:-10}
+      - BATCH_TIMEOUT=${BATCH_TIMEOUT:-60}
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.6}
       - SCAN_DIR=/data/scan
       - CENSORED_DIR=/data/censored
       - DB_PATH=/data/db/scanned.db
 
+      # Redaction: blur (default), pixelate or box
+      - REDACTION_MODE=${REDACTION_MODE:-blur}
+      - REDACTION_STRENGTH=${REDACTION_STRENGTH:-60}
+      - REDACTION_PADDING=${REDACTION_PADDING:-8}
+
+      # Immich admin moderation. The database is the whole integration: Immich
+      # API keys only ever cover their own user, so they cannot moderate a
+      # shared library. Use a restricted role (see README.md), not postgres.
+      - IMMICH_DB_HOST=${IMMICH_DB_HOST:-}
+      - IMMICH_DB_PORT=${IMMICH_DB_PORT:-5432}
+      - IMMICH_DB_NAME=${IMMICH_DB_NAME:-immich}
+      - IMMICH_DB_USER=${IMMICH_DB_USER:-photomod}
+      - IMMICH_DB_PASSWORD=${IMMICH_DB_PASSWORD:-}
+      - IMMICH_DB_URL=${IMMICH_DB_URL:-}
+      - IMMICH_EXTERNAL_URL=${IMMICH_EXTERNAL_URL:-}
+      - IMMICH_PATH_MAP=${IMMICH_PATH_MAP:-/data/scan:upload/library}
+      - IMMICH_DELETE_MODE=${IMMICH_DELETE_MODE:-trash}
+      - IMMICH_NOTIFY_OWNER_DEFAULT=${IMMICH_NOTIFY_OWNER_DEFAULT:-false}
+
+      # Moderation dashboard
+      - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-true}
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:8080}
+      - DASHBOARD_USER=${DASHBOARD_USER:-}
+      - DASHBOARD_PASS=${DASHBOARD_PASS:-}
+      - DASHBOARD_ALLOW_REVEAL=${DASHBOARD_ALLOW_REVEAL:-true}
+      - REVIEW_DIR=/data/review
+      - REVIEW_DB_PATH=/data/db/review.db
+      - REVIEW_RETENTION_DAYS=${REVIEW_RETENTION_DAYS:-30}
+
+    # To reach Immich's database, join the network its postgres container is
+    # on - see "Reaching the Immich database" in README.md.
+    # networks:
+    #   - default
+    #   - immich
+
     restart: unless-stopped
 
-    # Health check to ensure service is running
+    # Health check hits the dashboard, which also reports the review queue
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
+
+# networks:
+#   immich:
+#     external: true
+#     name: ${IMMICH_NETWORK:-immich_default}
 
 volumes:
-  # Named volume for persistent database
+  # Named volume for persistent databases
   photo-moderation-db:
+
+  # Redacted previews retained for the dashboard
+  photo-moderation-review:
 
   # Named volume for NudeNet models (downloaded once, reused)
   nudenet-models:

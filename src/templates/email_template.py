@@ -1,4 +1,6 @@
 """HTML email template generator for moderation alerts."""
+from html import escape
+from pathlib import Path
 
 
 class EmailTemplate:
@@ -46,6 +48,25 @@ class EmailTemplate:
                 border: 2px solid #ddd;
                 border-radius: 5px;
             }
+            .actions {
+                margin-top: 15px;
+            }
+            .action-button {
+                display: inline-block;
+                padding: 8px 14px;
+                margin-right: 10px;
+                border-radius: 4px;
+                background-color: #1976d2;
+                color: #ffffff !important;
+                font-weight: bold;
+            }
+            .action-secondary {
+                background-color: #5f6368;
+            }
+            .warning {
+                font-size: 0.85em;
+                color: #b26a00;
+            }
             .separator {
                 border-top: 2px solid #ddd;
                 margin: 20px 0;
@@ -55,16 +76,20 @@ class EmailTemplate:
         """
 
     @staticmethod
-    def generate_html(results):
+    def generate_html(results, dashboard_url=None):
         """
         Generate HTML email content from detection results.
 
         Args:
             results: List of detection result dictionaries containing:
                 - original_path: Path to original file
-                - censored_path: Path to censored file
+                - censored_path: Path to redacted preview
                 - detections: Detection data
                 - exif_data: EXIF metadata (optional)
+                - owner_name / owner_email: Immich uploader (optional)
+                - immich_link: Link to the asset in Immich (optional)
+                - review_link: Link to the dashboard review page (optional)
+            dashboard_url: Base URL of the moderation dashboard (optional)
 
         Returns:
             str: Complete HTML email content
@@ -78,8 +103,14 @@ class EmailTemplate:
         </head>
         <body>
             <h1>🚨 Photo Moderation Alert</h1>
-            <p>The following explicit files were detected and censored:</p>
+            <p>The following explicit files were detected and redacted:</p>
         """
+
+        if dashboard_url:
+            html += (
+                f'<p><a class="action-button" href="{escape(dashboard_url, quote=True)}">'
+                f'Open moderation dashboard</a></p>'
+            )
 
         for idx, res in enumerate(results, 1):
             html += EmailTemplate._generate_file_entry(idx, res)
@@ -96,45 +127,91 @@ class EmailTemplate:
         """Generate HTML for a single file entry."""
         html = f'<div class="file-entry">'
         html += f'<div class="file-header">FILE #{idx}</div>'
-        html += f'<p><span class="info-label">Path:</span> {res["original_path"]}</p>'
+        html += f'<p><span class="info-label">Path:</span> {escape(str(res["original_path"]))}</p>'
 
-        # Add detection labels
+        html += EmailTemplate._generate_owner_info(res)
+
+        if res.get('frame_number') is not None:
+            timestamp = res.get('frame_timestamp')
+            position = f" (t={timestamp:.1f}s)" if isinstance(timestamp, (int, float)) else ''
+            html += f'<p><span class="info-label">Frame:</span> {res["frame_number"]}{position}</p>'
+
         html += EmailTemplate._generate_detection_labels(res.get('detections', []))
 
-        # Add EXIF data
         html += EmailTemplate._generate_exif_data(res.get('exif_data'))
 
-        # Add inline image
         censored_path = res.get('censored_path')
-        if censored_path and censored_path.exists():
+        if censored_path and Path(censored_path).exists():
             image_cid = f"image{idx}"
-            html += f'<div><img src="cid:{image_cid}" class="censored-image" alt="Censored image {idx}"></div>'
+            html += f'<div><img src="cid:{image_cid}" class="censored-image" alt="Redacted image {idx}"></div>'
 
+        html += EmailTemplate._generate_actions(res)
         html += '</div>'
         return html
 
     @staticmethod
+    def _generate_owner_info(res):
+        """Generate HTML for the Immich uploader details."""
+        name = res.get('owner_name')
+        email = res.get('owner_email')
+
+        if not name and not email:
+            if res.get('immich_asset_id'):
+                return '<p><span class="info-label">Uploaded by:</span> Unknown Immich user</p>'
+            return '<p><span class="info-label">Uploaded by:</span> Not matched to an Immich asset</p>'
+
+        display = escape(name) if name else ''
+        if email:
+            contact = f'<a href="mailto:{escape(email, quote=True)}">{escape(email)}</a>'
+            display = f'{display} ({contact})' if display else contact
+
+        return f'<p><span class="info-label">Uploaded by:</span> {display}</p>'
+
+    @staticmethod
+    def _generate_actions(res):
+        """Generate the review link for a detection."""
+        review_link = res.get('review_link')
+        immich_link = res.get('immich_link')
+
+        # Immich shows an asset only to the user who owns it, so a link there
+        # denies the moderator on everyone else's upload. The dashboard is the
+        # only place they can actually review it.
+        if review_link:
+            return (
+                f'<div class="actions">'
+                f'<a class="action-button" href="{escape(review_link, quote=True)}">'
+                f'Review (redacted)</a></div>'
+            )
+
+        if not immich_link:
+            return ''
+
+        return (
+            f'<div class="actions">'
+            f'<a class="action-button action-secondary" href="{escape(immich_link, quote=True)}">'
+            f'Open in Immich</a></div>'
+            f'<p class="warning">The dashboard is disabled, so this links to the unredacted '
+            f'original in Immich, which only its owner can open.</p>'
+        )
+
+    @staticmethod
     def _generate_detection_labels(detections):
         """Generate HTML for detection labels with confidence scores."""
-        # Collect detections with their scores
         label_scores = {}
 
+        # Video detections arrive keyed by frame number, image detections flat.
         if isinstance(detections, dict):
-            # Handle video detections (dict of frame_num: detections)
             for frame_detections in detections.values():
                 if isinstance(frame_detections, list):
                     for det in frame_detections:
                         label = det.get('class', 'Unknown')
                         score = det.get('score', 0)
-                        # Keep the highest score for each label
                         if label not in label_scores or score > label_scores[label]:
                             label_scores[label] = score
         else:
-            # Handle image detections (list)
             for det in detections:
                 label = det.get('class', 'Unknown')
                 score = det.get('score', 0)
-                # Keep the highest score for each label
                 if label not in label_scores or score > label_scores[label]:
                     label_scores[label] = score
 
@@ -142,7 +219,7 @@ class EmailTemplate:
         for label in sorted(label_scores.keys()):
             score = label_scores[label]
             score_percent = int(score * 100)
-            html += f'<span class="detection-label">{label} <span class="confidence-score">({score_percent}%)</span></span>'
+            html += f'<span class="detection-label">{escape(str(label))} <span class="confidence-score">({score_percent}%)</span></span>'
         html += '</p>'
 
         return html
@@ -155,9 +232,9 @@ class EmailTemplate:
 
         html = ''
         if 'date_taken' in exif_data:
-            html += f'<p><span class="info-label">Date Taken:</span> {exif_data["date_taken"]}</p>'
+            html += f'<p><span class="info-label">Date Taken:</span> {escape(str(exif_data["date_taken"]))}</p>'
         if 'location' in exif_data:
-            html += f'<p><span class="info-label">Location:</span> {exif_data["location"]}</p>'
-            html += f'<p><span class="info-label">Google Maps:</span> <a href="{exif_data["google_maps_link"]}" target="_blank">View on Map</a></p>'
+            html += f'<p><span class="info-label">Location:</span> {escape(str(exif_data["location"]))}</p>'
+            html += f'<p><span class="info-label">Google Maps:</span> <a href="{escape(exif_data["google_maps_link"], quote=True)}" target="_blank">View on Map</a></p>'
 
         return html
