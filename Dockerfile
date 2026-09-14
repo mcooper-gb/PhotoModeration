@@ -12,7 +12,15 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 # Apply the base image's outstanding security updates, then add libgomp.so.1 for
 # onnxruntime. Headless OpenCV needs no X11 or GL libraries.
-RUN apt-get update && \
+#
+# SECURITY_REFRESH exists only to be part of this layer's cache key. The command text
+# never changes, so without it Docker serves the layer from cache and the upgrade
+# silently stops running until the base image digest moves - which lags Debian's own
+# security uploads. Release builds pass a fresh value:
+#   docker build --pull --build-arg SECURITY_REFRESH=$(Get-Date -Format yyyy-MM-dd) .
+ARG SECURITY_REFRESH=2026-09-14
+RUN echo "security refresh: ${SECURITY_REFRESH}" && \
+    apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     libgomp1 && \
@@ -24,10 +32,12 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies, then strip the toolchain the runtime never uses: setuptools
-# and wheel are build-time only (nothing on the inference path imports them), and pip
-# itself is removed last because its vendored copies of msgpack and setuptools are the
-# only remaining source of HIGH findings in the image.
+# Install Python dependencies, then strip the packaging toolchain the runtime never
+# uses. pip is the one that matters: its vendored copies of msgpack and setuptools were
+# the only remaining source of HIGH findings, and nothing on the inference path imports
+# it. The setuptools and wheel uninstall is a guard rather than a fix - this base image
+# ships neither, so it is a no-op today and only earns its keep if a future dependency
+# drags them back in.
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip uninstall -y setuptools wheel && \
@@ -54,6 +64,12 @@ ENV DASHBOARD_PORT=8080
 
 # Set Python path to include src directory
 ENV PYTHONPATH=/app
+
+# Stream stdout and stderr straight to the container log. Python buffers when stdout is
+# a pipe rather than a tty, so without this `docker logs` on a healthy container stays
+# empty until the process exits - and this image deliberately keeps no pip or build
+# tooling to debug with instead.
+ENV PYTHONUNBUFFERED=1
 
 # Moderation dashboard
 EXPOSE 8080
